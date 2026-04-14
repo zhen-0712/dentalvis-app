@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "DentalVis",
+    "slug": "dentalvis-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "dentalvis",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f4f6ef"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ncu.dentalvis"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#f4f6ef"
+      },
+      "package": "com.ncu.dentalvis",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DentalVis 需要存取相片以上傳牙齒照片",
+          "cameraPermission": "DentalVis 需要使用相機拍攝牙齒照片"
+        }
+      ]
+    ]
+  }
+}
