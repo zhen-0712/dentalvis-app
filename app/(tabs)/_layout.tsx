@@ -1,52 +1,18 @@
 import { Tabs } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { Colors, FontFamilies } from '../../constants/theme';
-import { Platform } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 
-// Tab icon SVG paths (inline, no icon library needed)
-function HomeIcon({ color }: { color: string }) {
-  const Svg = require('react-native-svg').Svg;
-  const Path = require('react-native-svg').Path;
+function TabIcon({ name, color, focused }: {
+  name: keyof typeof Feather.glyphMap;
+  color: string;
+  focused: boolean;
+}) {
   return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <Path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      <Path d="M9 22V12h6v10" />
-    </Svg>
-  );
-}
-
-function ScanIcon({ color }: { color: string }) {
-  const Svg = require('react-native-svg').Svg;
-  const Path = require('react-native-svg').Path;
-  const Circle = require('react-native-svg').Circle;
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-      <Circle cx={12} cy={13} r={3} />
-    </Svg>
-  );
-}
-
-function HistoryIcon({ color }: { color: string }) {
-  const Svg = require('react-native-svg').Svg;
-  const Path = require('react-native-svg').Path;
-  const Circle = require('react-native-svg').Circle;
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <Circle cx={12} cy={12} r={10} />
-      <Path d="M12 6v6l4 2" />
-    </Svg>
-  );
-}
-
-function ProfileIcon({ color }: { color: string }) {
-  const Svg = require('react-native-svg').Svg;
-  const Path = require('react-native-svg').Path;
-  const Circle = require('react-native-svg').Circle;
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-      <Circle cx={12} cy={7} r={4} />
-    </Svg>
+    <View style={styles.iconWrap}>
+      <Feather name={name} size={23} color={color} />
+      {focused && <View style={styles.dot} />}
+    </View>
   );
 }
 
@@ -61,14 +27,16 @@ export default function TabLayout() {
           backgroundColor: Colors.white,
           borderTopColor: Colors.jadeAlpha08,
           borderTopWidth: 1,
-          paddingTop: 4,
-          paddingBottom: Platform.OS === 'ios' ? 20 : 8,
-          height: Platform.OS === 'ios' ? 82 : 64,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.04,
+          shadowRadius: 12,
+          elevation: 8,
         },
         tabBarLabelStyle: {
           fontFamily: FontFamilies.bodyMed,
-          fontSize: 11,
-          marginTop: 2,
+          fontSize: 10,
+          letterSpacing: 0.2,
         },
       }}
     >
@@ -76,30 +44,44 @@ export default function TabLayout() {
         name="index"
         options={{
           title: '首頁',
-          tabBarIcon: ({ color }) => <HomeIcon color={color} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon name="home" color={color} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="scan"
         options={{
           title: '掃描',
-          tabBarIcon: ({ color }) => <ScanIcon color={color} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon name="camera" color={color} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
           title: '歷史',
-          tabBarIcon: ({ color }) => <HistoryIcon color={color} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon name="clock" color={color} focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: '我的',
-          tabBarIcon: ({ color }) => <ProfileIcon color={color} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon name="user" color={color} focused={focused} />,
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  iconWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.jade,
+  },
+});

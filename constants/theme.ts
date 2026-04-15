@@ -1,11 +1,10 @@
 // ===== DentalVis Design System =====
-// 完全對應網頁版 CSS Variables
 
 export const Colors = {
   jade:       '#03695e',
   jadeLight:  '#6daf5f',
   aqua:       '#239dca',
-  aquaLight:  '#a5c6db',
+  aquaLight:  '#5bbcd4',
   linen:      '#e7e9d8',
   linenDark:  '#d4d8c0',
   ink:        '#1a2420',
@@ -16,7 +15,6 @@ export const Colors = {
   white:      '#ffffff',
   redPlaque:  '#c0392b',
 
-  // 常用透明色
   jadeAlpha04: 'rgba(3,105,94,0.04)',
   jadeAlpha08: 'rgba(3,105,94,0.08)',
   jadeAlpha12: 'rgba(3,105,94,0.12)',
@@ -25,14 +23,15 @@ export const Colors = {
 };
 
 export const Gradients = {
-  primary:  ['#03695e', '#6daf5f'] as const,   // btn-primary
-  plaque:   ['#239dca', '#a5c6db'] as const,   // btn-plaque
+  primary: ['#03695e', '#6daf5f'] as const,
+  plaque:  ['#239dca', '#5bbcd4'] as const,
+  hero:    ['#03695e', '#0e8a7c', '#239dca'] as const, // forest → sky
 };
 
 export const Radius = {
   sm:  6,
-  md:  14,
-  lg:  24,
+  md:  16,
+  lg:  26,
   xl:  40,
 };
 
@@ -40,21 +39,29 @@ export const Shadows = {
   sm: {
     shadowColor: '#03695e',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.07,
     shadowRadius: 8,
     elevation: 2,
   },
   md: {
     shadowColor: '#03695e',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 32,
+    shadowOpacity: 0.11,
+    shadowRadius: 24,
     elevation: 6,
+  },
+  hero: {
+    shadowColor: '#03695e',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.22,
+    shadowRadius: 40,
+    elevation: 12,
   },
 };
 
 export const FontFamilies = {
-  display: 'DMSerifDisplay_400Regular',
-  body:    'DMSans_400Regular',
-  bodyMed: 'DMSans_500Medium',
+  display:  'DMSerifDisplay_400Regular', // Latin-only brand text (DentalVis)
+  heading:  'JFOpenHuninn',             // Chinese page headings
+  body:     'JFOpenHuninn',             // Body / descriptions
+  bodyMed:  'JFOpenHuninn',             // Labels / buttons (bold via fontWeight)
 };

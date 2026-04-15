@@ -11,6 +11,7 @@ export default function RootLayout() {
     DMSans_400Regular,
     DMSans_500Medium,
     DMSerifDisplay_400Regular,
+    JFOpenHuninn: require('../assets/fonts/jf-openhuninn.ttf'),
   });
 
   if (!fontsLoaded) {
@@ -22,8 +23,9 @@ export default function RootLayout() {
       <StatusBar style="dark" backgroundColor={Colors.surface} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="(auth)/login" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="(auth)/login"    options={{ presentation: 'modal' }} />
         <Stack.Screen name="(auth)/register" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="viewer"          options={{ presentation: 'fullScreenModal', headerShown: false }} />
       </Stack>
     </AuthProvider>
   );

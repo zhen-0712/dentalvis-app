@@ -39,7 +39,8 @@
           "photosPermission": "DentalVis 需要存取相片以上傳牙齒照片",
           "cameraPermission": "DentalVis 需要使用相機拍攝牙齒照片"
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }
