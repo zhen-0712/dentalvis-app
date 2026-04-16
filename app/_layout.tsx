@@ -2,7 +2,6 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts, DMSans_400Regular, DMSans_500Medium } from '@expo-google-fonts/dm-sans';
 import { DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
-import { NotoSansTC_400Regular, NotoSansTC_500Medium } from '@expo-google-fonts/noto-sans-tc';
 import { AuthProvider } from '../hooks/useAuth';
 import { Colors } from '../constants/theme';
 import { View } from 'react-native';
@@ -12,8 +11,6 @@ export default function RootLayout() {
     DMSans_400Regular,
     DMSans_500Medium,
     DMSerifDisplay_400Regular,
-    NotoSansTC_400Regular,
-    NotoSansTC_500Medium,
   });
 
   if (!fontsLoaded) {

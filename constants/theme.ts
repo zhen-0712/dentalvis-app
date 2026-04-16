@@ -61,7 +61,7 @@ export const Shadows = {
 
 export const FontFamilies = {
   display:  'DMSerifDisplay_400Regular', // Latin-only brand text (DentalVis)
-  heading:  'NotoSansTC_500Medium',      // Chinese page headings — round, clean
-  body:     'NotoSansTC_400Regular',     // Chinese body / descriptions
-  bodyMed:  'NotoSansTC_500Medium',      // Labels / buttons
+  heading:  'PingFang TC',              // iOS system round Chinese font
+  body:     'PingFang TC',
+  bodyMed:  'PingFang TC',
 };
