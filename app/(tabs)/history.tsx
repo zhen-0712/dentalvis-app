@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, Dimensions,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import Svg, { Polyline, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -257,10 +258,12 @@ export default function HistoryScreen() {
   const [filter,   setFilter]   = useState<'week' | 'month' | 'all'>('all');
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
-  useEffect(() => {
+  // Re-fetch every time the tab comes into focus so newly completed analyses appear
+  useFocusEffect(useCallback(() => {
     if (!user) { setLoading(false); return; }
+    setLoading(true);
     fetchAnalyses().then(setAnalyses).finally(() => setLoading(false));
-  }, [user]);
+  }, [user]));
 
   const filtered = analyses.filter(a => {
     const d = new Date(a.created_at);

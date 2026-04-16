@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, Pressable, SafeAreaView } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Pressable, SafeAreaView, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -7,6 +7,11 @@ import { Colors, FontFamilies } from '../constants/theme';
 
 export default function ViewerScreen() {
   const { url, title } = useLocalSearchParams<{ url: string; title: string }>();
+  const [loading, setLoading] = useState(true);
+  const isPlaque = (title || '').includes('菌斑');
+
+  const accentColor = isPlaque ? '#239dca' : '#03695e';
+  const accentLight = isPlaque ? '#5bbcd4' : '#6daf5f';
 
   const html = `<!DOCTYPE html>
 <html>
@@ -14,11 +19,38 @@ export default function ViewerScreen() {
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #1a2420; width: 100vw; height: 100vh; overflow: hidden; }
+    body {
+      background: #111d1a;
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+      background-size: 28px 28px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      width: 340px; height: 340px;
+      border-radius: 50%;
+      background: radial-gradient(circle, ${accentColor}22 0%, transparent 70%);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -60%);
+      pointer-events: none;
+      z-index: 0;
+    }
     model-viewer {
       width: 100vw;
       height: 100vh;
-      background: linear-gradient(135deg, #1a2420 0%, #0e3530 50%, #03695e22 100%);
+      background: transparent;
+      --poster-color: transparent;
+      position: relative;
+      z-index: 1;
     }
   </style>
   <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
@@ -29,14 +61,15 @@ export default function ViewerScreen() {
     alt="3D 牙齒模型"
     camera-controls
     auto-rotate
-    auto-rotate-delay="1000"
-    rotation-per-second="20deg"
+    auto-rotate-delay="800"
+    rotation-per-second="18deg"
     environment-image="neutral"
-    shadow-intensity="1"
-    exposure="0.8"
+    shadow-intensity="0.6"
+    exposure="0.9"
     tone-mapping="commerce"
     min-camera-orbit="auto auto 0%"
-    max-camera-orbit="auto auto 200%"
+    max-camera-orbit="auto auto 250%"
+    interpolation-decay="200"
   ></model-viewer>
 </body>
 </html>`;
@@ -50,25 +83,38 @@ export default function ViewerScreen() {
         allowFileAccess
         javaScriptEnabled
         domStorageEnabled
-        startInLoadingState
-        renderLoading={() => (
-          <View style={styles.loadingWrap}>
-            <Feather name="rotate-cw" size={32} color={Colors.jade} />
-            <Text style={styles.loadingText}>載入 3D 模型中...</Text>
-          </View>
-        )}
+        onLoadEnd={() => setLoading(false)}
       />
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <View style={[styles.loadingRing, { borderColor: accentColor + '40' }]}>
+            <ActivityIndicator size="large" color={accentColor} />
+          </View>
+          <Text style={[styles.loadingText, { color: accentColor }]}>載入 3D 模型中...</Text>
+        </View>
+      )}
+
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.header}>
           <Pressable style={styles.closeBtn} onPress={() => router.back()}>
-            <Feather name="x" size={20} color={Colors.white} />
+            <Feather name="x" size={18} color={Colors.white} />
           </Pressable>
-          <Text style={styles.headerTitle}>{title || '3D 牙齒模型'}</Text>
+          <View style={styles.titleWrap}>
+            <View style={[styles.titleDot, { backgroundColor: accentLight }]} />
+            <Text style={styles.headerTitle}>{title || '3D 牙齒模型'}</Text>
+          </View>
           <View style={{ width: 42 }} />
         </View>
-        <View style={styles.hint}>
-          <Feather name="rotate-ccw" size={13} color="rgba(255,255,255,0.6)" />
-          <Text style={styles.hintText}>拖曳旋轉 · 捏合縮放</Text>
+
+        <View style={styles.bottomBar}>
+          <View style={styles.hintPill}>
+            <Feather name="rotate-ccw" size={12} color="rgba(255,255,255,0.55)" />
+            <Text style={styles.hintText}>拖曳旋轉</Text>
+            <View style={styles.hintDivider} />
+            <Feather name="maximize-2" size={12} color="rgba(255,255,255,0.55)" />
+            <Text style={styles.hintText}>捏合縮放</Text>
+          </View>
         </View>
       </SafeAreaView>
     </View>
@@ -76,21 +122,29 @@ export default function ViewerScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a2420' },
-  webview: { flex: 1 },
-  loadingWrap: {
+  container: { flex: 1, backgroundColor: '#111d1a' },
+  webview:   { flex: 1, backgroundColor: 'transparent' },
+
+  loadingOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: '#1a2420',
+    backgroundColor: '#111d1a',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
+    gap: 20,
+  },
+  loadingRing: {
+    width: 80, height: 80,
+    borderRadius: 40,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingText: {
     fontFamily: FontFamilies.body,
-    fontSize: 15,
-    color: Colors.jade,
+    fontSize: 14,
   },
+
   overlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
@@ -101,32 +155,59 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-    backgroundColor: 'rgba(26,36,32,0.7)',
+    paddingTop: 10,
+    paddingBottom: 14,
+    backgroundColor: 'rgba(17,29,26,0.85)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.07)',
   },
   closeBtn: {
     width: 42, height: 42,
     borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.13)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  titleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  titleDot: {
+    width: 7, height: 7,
+    borderRadius: 4,
   },
   headerTitle: {
     fontFamily: FontFamilies.bodyMed,
     fontSize: 16,
     color: Colors.white,
+    letterSpacing: 0.3,
   },
-  hint: {
+
+  bottomBar: {
+    alignItems: 'center',
+    paddingBottom: 20,
+  },
+  hintPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingBottom: 24,
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.50)',
+    borderRadius: 99,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  hintDivider: {
+    width: 1, height: 12,
+    backgroundColor: 'rgba(255,255,255,0.20)',
   },
   hintText: {
     fontFamily: FontFamilies.body,
-    fontSize: 13,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.55)',
   },
 });

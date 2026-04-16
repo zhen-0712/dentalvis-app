@@ -61,7 +61,7 @@ export const Shadows = {
 
 export const FontFamilies = {
   display:  'DMSerifDisplay_400Regular', // Latin-only brand text (DentalVis)
-  heading:  'JFOpenHuninn',             // Chinese page headings
-  body:     'JFOpenHuninn',             // Body / descriptions
-  bodyMed:  'JFOpenHuninn',             // Labels / buttons (bold via fontWeight)
+  heading:  'NotoSansTC_500Medium',      // Chinese page headings — round, clean
+  body:     'NotoSansTC_400Regular',     // Chinese body / descriptions
+  bodyMed:  'NotoSansTC_500Medium',      // Labels / buttons
 };
