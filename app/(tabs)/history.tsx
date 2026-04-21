@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, Dimensions,
+  View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import Svg, { Polyline, Circle, Line, Text as SvgText } from 'react-native-svg';
@@ -53,8 +53,8 @@ function AnalysisCard({ a, expanded, onToggle }: { a: Analysis; expanded: boolea
 
   return (
     <View style={styles.card}>
+      <View style={[styles.cardTypeBar, { backgroundColor: isPlaque ? Colors.aqua : Colors.jade }]} />
       <Pressable style={styles.cardHeader} onPress={onToggle}>
-        <View style={[styles.cardTypeBar, { backgroundColor: isPlaque ? Colors.aqua : Colors.jade }]} />
         <View style={styles.cardLeft}>
           <View style={[styles.typeBadge, isPlaque && styles.typeBadgePlaque]}>
             <Feather
@@ -147,106 +147,270 @@ function AnalysisCard({ a, expanded, onToggle }: { a: Analysis; expanded: boolea
   );
 }
 
-const SCREEN_W = Dimensions.get('window').width - 40; // 20px padding each side
+const FDI_UPPER = new Set([11,12,13,14,15,16,17,18,21,22,23,24,25,26,27,28]);
+const TOOTH_COLORS = ['#239dca','#6daf5f','#e8a020','#8e44ad','#e74c3c','#16a085','#f39c12','#2980b9'];
+
+type TrendMode = 'overall' | 'detail';
+type OverallFilter = 'all' | 'upper' | 'lower';
 
 function TrendSection({ analyses }: { analyses: Analysis[] }) {
-  const plaque = analyses
-    .filter(a => a.type === 'plaque' && a.status === 'done' && a.result?.stats?.plaque_ratio != null)
-    .map(a => ({
-      x: new Date(a.created_at).getTime(),
-      y: parseFloat((a.result.stats.plaque_ratio * 100).toFixed(1)),
-      label: new Date(a.created_at).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }),
-    }))
-    .sort((a, b) => a.x - b.x);
+  const { width: screenW } = useWindowDimensions();
+  const [trendMode, setTrendMode]       = useState<TrendMode>('overall');
+  const [overallFilter, setOverallFilter] = useState<OverallFilter>('all');
+  const [selectedFdis, setSelectedFdis] = useState<Set<string>>(new Set());
 
-  if (plaque.length < 2) return null;
+  const PAD    = { top: 14, bottom: 26, left: 44, right: 10 };
+  const svgW   = screenW - 40 - 32;
+  const chartW = svgW - PAD.left - PAD.right;
+  const chartH = 120;
 
-  const PAD = { top: 16, bottom: 32, left: 38, right: 12 };
-  const chartW = SCREEN_W - PAD.left - PAD.right;
-  const chartH = 140;
+  const plaqueList = analyses.filter(a => a.type === 'plaque' && a.status === 'done' && a.result?.stats);
+  if (plaqueList.length < 2) return null;
 
-  const minY = Math.max(0, Math.min(...plaque.map(p => p.y)) - 5);
-  const maxY = Math.min(100, Math.max(...plaque.map(p => p.y)) + 5);
-  const rangeY = maxY - minY || 1;
+  const sortedList = [...plaqueList].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
 
-  const toX = (i: number) => (i / (plaque.length - 1)) * chartW;
-  const toY = (v: number) => chartH - ((v - minY) / rangeY) * chartH;
+  // Build fdiList: union of all ever-detected teeth across ALL analyses,
+  // minus teeth that appear in never_detected in EVERY analysis.
+  const everDetected = new Set<string>();
+  const neverCount = new Map<string, number>();
+  const doneAnalyses = analyses.filter(a => a.status === 'done' && a.result);
+  for (const a of doneAnalyses) {
+    const ta = a.result.tooth_analysis;
+    if (ta) {
+      Object.keys(ta.teeth || {}).forEach(k => everDetected.add(k));
+      (ta.never_detected || []).forEach((k: number) =>
+        neverCount.set(String(k), (neverCount.get(String(k)) || 0) + 1)
+      );
+    }
+    if (a.result.stats) {
+      Object.keys(a.result.stats.fdi_plaque_summary || {}).forEach(k => everDetected.add(k));
+    }
+  }
+  const total  = doneAnalyses.length || 1;
+  const fdiList   = Array.from(everDetected)
+    .filter(k => (neverCount.get(k) || 0) < total)
+    .sort((a, b) => Number(a) - Number(b));
+  const upperFdis = fdiList.filter(f => FDI_UPPER.has(Number(f)));
+  const lowerFdis = fdiList.filter(f => !FDI_UPPER.has(Number(f)));
 
-  const points = plaque.map((p, i) => `${toX(i)},${toY(p.y)}`).join(' ');
-
-  // Y axis ticks: 4 evenly spaced
-  const yTicks = Array.from({ length: 4 }, (_, i) => {
-    const val = minY + (rangeY / 3) * i;
-    return { val: Math.round(val), y: toY(val) };
+  const toggleFdi = (fdi: string) => setSelectedFdis(prev => {
+    const next = new Set(prev); next.has(fdi) ? next.delete(fdi) : next.add(fdi); return next;
   });
 
-  // X axis: show at most 5 labels
-  const step = Math.ceil(plaque.length / 5);
-  const xLabels = plaque
-    .map((p, i) => ({ label: p.label, x: toX(i), show: i % step === 0 || i === plaque.length - 1 }))
-    .filter(l => l.show);
+  const toX = (i: number) => sortedList.length > 1 ? (i / (sortedList.length - 1)) * chartW : chartW / 2;
+
+  const getOverallY = (a: Analysis): number => {
+    const stats = a.result?.stats;
+    if (!stats) return 0;
+    if (overallFilter === 'all') return stats.plaque_ratio != null ? stats.plaque_ratio * 100 : 0;
+    const summary = stats.fdi_plaque_summary || {};
+    return Object.entries(summary).reduce((s, [k, v]) => {
+      const up = FDI_UPPER.has(Number(k));
+      return s + ((overallFilter === 'upper') === up ? ((v as any).hit_verts || 0) : 0);
+    }, 0);
+  };
+
+  const getFdiY = (a: Analysis, fdi: string): number => {
+    const summary = a.result?.stats?.fdi_plaque_summary || {};
+    const v = summary[fdi] ?? summary[Number(fdi)];
+    return v ? ((v as any).hit_verts || 0) : 0;
+  };
+
+  const selectedFdiArray = Array.from(selectedFdis);
+  const noSelection = trendMode === 'detail' && selectedFdiArray.length === 0;
+
+  const maxY = trendMode === 'overall'
+    ? Math.max(...sortedList.map(getOverallY), 0.01)
+    : Math.max(...sortedList.flatMap(a => selectedFdiArray.map(fdi => getFdiY(a, fdi))), 0.01);
+  const toY = (v: number) => chartH - (v / maxY) * chartH;
+
+  const yTicks = [0, 1, 2, 3].map(i => ({ val: (maxY / 3) * i, y: toY((maxY / 3) * i) }));
+  const step = Math.max(1, Math.ceil(sortedList.length / 5));
+  const xLabels = sortedList.map((a, i) => ({
+    label: new Date(a.created_at).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }),
+    x: toX(i),
+    show: i % step === 0 || i === sortedList.length - 1,
+  }));
+  const fmtY = (v: number) =>
+    trendMode === 'overall' && overallFilter === 'all'
+      ? `${v.toFixed(1)}%`
+      : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`;
 
   return (
     <View style={styles.trendCard}>
-      <Text style={styles.blockTitle}>菌斑覆蓋率趨勢</Text>
-      <Text style={styles.trendSub}>依時間顯示每次菌斑分析結果</Text>
-      <Svg
-        width={SCREEN_W}
-        height={chartH + PAD.top + PAD.bottom}
-        style={{ marginTop: 8 }}
-      >
-        {/* Grid lines + Y labels */}
-        {yTicks.map(t => (
-          <React.Fragment key={t.val}>
-            <Line
-              x1={PAD.left} y1={PAD.top + t.y}
-              x2={PAD.left + chartW} y2={PAD.top + t.y}
-              stroke="rgba(3,105,94,0.08)" strokeWidth={1}
-            />
-            <SvgText
-              x={PAD.left - 4} y={PAD.top + t.y + 4}
-              fontSize={9} fill={Colors.muted} textAnchor="end"
-            >{t.val}%</SvgText>
-          </React.Fragment>
+      <View style={styles.trendHeader}>
+        <Text style={styles.blockTitle}>菌斑覆蓋率趨勢</Text>
+      </View>
+
+      {/* Mode toggle */}
+      <View style={styles.trendModeToggle}>
+        {(['overall', 'detail'] as TrendMode[]).map(m => (
+          <Pressable key={m}
+            style={[styles.trendModeBtn, trendMode === m && styles.trendModeBtnActive]}
+            onPress={() => setTrendMode(m)}
+          >
+            <Text style={[styles.trendModeTxt, trendMode === m && styles.trendModeTxtActive]}>
+              {m === 'overall' ? '整體趨勢' : '牙位明細'}
+            </Text>
+          </Pressable>
         ))}
+      </View>
 
-        {/* X axis line */}
-        <Line
-          x1={PAD.left} y1={PAD.top + chartH}
-          x2={PAD.left + chartW} y2={PAD.top + chartH}
-          stroke="rgba(3,105,94,0.12)" strokeWidth={1}
-        />
+      {/* Filter chips */}
+      {trendMode === 'overall' ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow} style={styles.filterScroll}>
+          {(['all', 'upper', 'lower'] as OverallFilter[]).map(f => (
+            <Pressable key={f}
+              style={[styles.filterChip, overallFilter === f && styles.filterChipActiveMain]}
+              onPress={() => setOverallFilter(f)}>
+              <Text style={[styles.filterChipTxt, overallFilter === f && styles.filterChipTxtActive]}>
+                {f === 'all' ? '全部' : f === 'upper' ? '上顎' : '下顎'}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={styles.detailFdiWrap}>
+          {/* Quick-select buttons */}
+          <View style={styles.detailQuickRow}>
+            {[
+              { key: 'all',   label: '全選',   fdis: fdiList },
+              { key: 'upper', label: '上顎',   fdis: upperFdis },
+              { key: 'lower', label: '下顎',   fdis: lowerFdis },
+            ].map(({ key, label, fdis }) => {
+              const allActive = fdis.length > 0 && fdis.every(f => selectedFdis.has(f));
+              return (
+                <Pressable key={key}
+                  style={[styles.detailQuickBtn, allActive && styles.detailQuickBtnActive]}
+                  onPress={() => setSelectedFdis(prev => {
+                    const next = new Set(prev);
+                    if (allActive) fdis.forEach(f => next.delete(f));
+                    else fdis.forEach(f => next.add(f));
+                    return next;
+                  })}>
+                  <Text style={[styles.detailQuickTxt, allActive && styles.detailQuickTxtActive]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-        {/* X labels */}
-        {xLabels.map(l => (
-          <SvgText
-            key={l.label + l.x}
-            x={PAD.left + l.x} y={PAD.top + chartH + 14}
-            fontSize={9} fill={Colors.muted} textAnchor="middle"
-          >{l.label}</SvgText>
-        ))}
+          {/* Upper jaw row */}
+          {upperFdis.length > 0 && (
+            <View style={styles.jawRow}>
+              <Text style={styles.jawRowLabel}>上顎</Text>
+              <View style={styles.jawChipWrap}>
+                {upperFdis.map(fdi => {
+                  const isSelected = selectedFdis.has(fdi);
+                  const chipColor = isSelected ? TOOTH_COLORS[selectedFdiArray.indexOf(fdi) % TOOTH_COLORS.length] : undefined;
+                  return (
+                    <Pressable key={fdi}
+                      style={[styles.filterChip, isSelected && { backgroundColor: chipColor, borderColor: chipColor }]}
+                      onPress={() => toggleFdi(fdi)}>
+                      <Text style={[styles.filterChipTxt, isSelected && styles.filterChipTxtActive]}>{fdi}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
 
-        {/* Line */}
-        <Polyline
-          points={plaque.map((p, i) => `${PAD.left + toX(i)},${PAD.top + toY(p.y)}`).join(' ')}
-          fill="none"
-          stroke={Colors.aqua}
-          strokeWidth={2}
-          strokeLinejoin="round"
-        />
+          {/* Lower jaw row */}
+          {lowerFdis.length > 0 && (
+            <View style={styles.jawRow}>
+              <Text style={styles.jawRowLabel}>下顎</Text>
+              <View style={styles.jawChipWrap}>
+                {lowerFdis.map(fdi => {
+                  const isSelected = selectedFdis.has(fdi);
+                  const chipColor = isSelected ? TOOTH_COLORS[selectedFdiArray.indexOf(fdi) % TOOTH_COLORS.length] : undefined;
+                  return (
+                    <Pressable key={fdi}
+                      style={[styles.filterChip, isSelected && { backgroundColor: chipColor, borderColor: chipColor }]}
+                      onPress={() => toggleFdi(fdi)}>
+                      <Text style={[styles.filterChipTxt, isSelected && styles.filterChipTxtActive]}>{fdi}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+        </View>
+      )}
 
-        {/* Dots */}
-        {plaque.map((p, i) => (
-          <Circle
-            key={i}
-            cx={PAD.left + toX(i)} cy={PAD.top + toY(p.y)}
-            r={4}
-            fill={Colors.white}
-            stroke={Colors.aqua}
-            strokeWidth={2}
-          />
-        ))}
-      </Svg>
+      {/* Legend */}
+      {trendMode === 'detail' && selectedFdiArray.length > 0 && (
+        <View style={styles.trendLegend}>
+          {selectedFdiArray.map((fdi, idx) => (
+            <View key={fdi} style={styles.trendLegendItem}>
+              <View style={[styles.trendLegendDot, { backgroundColor: TOOTH_COLORS[idx % TOOTH_COLORS.length] }]} />
+              <Text style={styles.trendLegendTxt}>FDI {fdi}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Sub-label for overall */}
+      {trendMode === 'overall' && (
+        <Text style={styles.trendSub}>
+          {overallFilter === 'all' ? '整體覆蓋率 (%)' : overallFilter === 'upper' ? '上顎菌斑頂點數' : '下顎菌斑頂點數'}
+        </Text>
+      )}
+
+      {/* Chart */}
+      {noSelection ? (
+        <View style={styles.trendEmpty}>
+          <Text style={styles.trendEmptyTxt}>請選擇要比較的牙位</Text>
+        </View>
+      ) : (
+        <Svg width={svgW} height={chartH + PAD.top + PAD.bottom} style={{ marginTop: 6 }}>
+          {yTicks.map((t, i) => (
+            <React.Fragment key={i}>
+              <Line x1={PAD.left} y1={PAD.top + t.y} x2={PAD.left + chartW} y2={PAD.top + t.y}
+                stroke="rgba(3,105,94,0.08)" strokeWidth={1} />
+              <SvgText x={PAD.left - 6} y={PAD.top + t.y + 4} fontSize={9} fill={Colors.muted} textAnchor="end">
+                {fmtY(t.val)}
+              </SvgText>
+            </React.Fragment>
+          ))}
+          <Line x1={PAD.left} y1={PAD.top + chartH} x2={PAD.left + chartW} y2={PAD.top + chartH}
+            stroke="rgba(3,105,94,0.12)" strokeWidth={1} />
+          {xLabels.filter(l => l.show).map((l, i) => (
+            <SvgText key={i} x={PAD.left + l.x} y={PAD.top + chartH + 14}
+              fontSize={9} fill={Colors.muted} textAnchor="middle">{l.label}</SvgText>
+          ))}
+
+          {trendMode === 'overall' ? (
+            <>
+              <Polyline
+                points={sortedList.map((a, i) => `${PAD.left + toX(i)},${PAD.top + toY(getOverallY(a))}`).join(' ')}
+                fill="none" stroke={Colors.aqua} strokeWidth={2} strokeLinejoin="round"
+              />
+              {sortedList.map((a, i) => (
+                <Circle key={i} cx={PAD.left + toX(i)} cy={PAD.top + toY(getOverallY(a))}
+                  r={4} fill={Colors.white} stroke={Colors.aqua} strokeWidth={2} />
+              ))}
+            </>
+          ) : (
+            selectedFdiArray.map((fdi, idx) => {
+              const color = TOOTH_COLORS[idx % TOOTH_COLORS.length];
+              return (
+                <React.Fragment key={fdi}>
+                  <Polyline
+                    points={sortedList.map((a, i) => `${PAD.left + toX(i)},${PAD.top + toY(getFdiY(a, fdi))}`).join(' ')}
+                    fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round"
+                  />
+                  {sortedList.map((a, i) => (
+                    <Circle key={i} cx={PAD.left + toX(i)} cy={PAD.top + toY(getFdiY(a, fdi))}
+                      r={4} fill={Colors.white} stroke={color} strokeWidth={2} />
+                  ))}
+                </React.Fragment>
+              );
+            })
+          )}
+        </Svg>
+      )}
     </View>
   );
 }
@@ -532,11 +696,55 @@ const styles = StyleSheet.create({
     borderColor: Colors.jadeAlpha08,
     ...Shadows.sm,
   },
+  trendHeader:  { marginBottom: 10 },
   blockTitle: {
     fontFamily: FontFamilies.bodyMed, fontSize: 12, color: Colors.muted,
     letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 2, fontWeight: '600',
   },
   trendSub: {
-    fontFamily: FontFamilies.body, fontSize: 12, color: Colors.linenDark, marginBottom: 4,
+    fontFamily: FontFamilies.body, fontSize: 11, color: Colors.linenDark, marginTop: 4,
   },
+  trendModeToggle: {
+    flexDirection: 'row', backgroundColor: Colors.surface,
+    borderRadius: Radius.xl, padding: 3,
+    borderWidth: 1, borderColor: Colors.jadeAlpha12,
+    marginBottom: 10, gap: 3,
+  },
+  trendModeBtn: {
+    flex: 1, paddingVertical: 7, borderRadius: Radius.xl,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  trendModeBtnActive: { backgroundColor: Colors.aqua },
+  trendModeTxt:       { fontFamily: FontFamilies.bodyMed, fontSize: 12, color: Colors.muted },
+  trendModeTxtActive: { color: Colors.white },
+  trendLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 6, marginBottom: 2 },
+  trendLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  trendLegendDot:  { width: 10, height: 10, borderRadius: 3 },
+  trendLegendTxt:  { fontFamily: FontFamilies.body, fontSize: 11, color: Colors.muted },
+  trendEmpty: { alignItems: 'center', paddingVertical: 32 },
+  trendEmptyTxt: { fontFamily: FontFamilies.body, fontSize: 13, color: Colors.linenDark },
+  detailFdiWrap:       { gap: 8, marginBottom: 4 },
+  detailQuickRow:      { flexDirection: 'row', gap: 6 },
+  detailQuickBtn:      {
+    flex: 1, paddingVertical: 6, borderRadius: 99,
+    borderWidth: 1, borderColor: Colors.aqua,
+    backgroundColor: 'rgba(35,157,202,0.05)',
+    alignItems: 'center',
+  },
+  detailQuickBtnActive: { backgroundColor: Colors.aqua },
+  detailQuickTxt:       { fontFamily: FontFamilies.bodyMed, fontSize: 12, color: Colors.aqua },
+  detailQuickTxtActive: { color: Colors.white },
+  jawRow:      { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  jawRowLabel: { fontFamily: FontFamilies.bodyMed, fontSize: 10, color: Colors.muted, width: 24, paddingTop: 5, textAlign: 'center' },
+  jawChipWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  filterScroll: { marginBottom: 4, marginHorizontal: -2 },
+  filterRow:    { paddingHorizontal: 2, gap: 6, alignItems: 'center' },
+  filterChip: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99,
+    borderWidth: 1, borderColor: Colors.jadeAlpha12,
+    backgroundColor: Colors.surface,
+  },
+  filterChipActiveMain: { backgroundColor: Colors.jade, borderColor: Colors.jade },
+  filterChipTxt:        { fontFamily: FontFamilies.body, fontSize: 12, color: Colors.muted },
+  filterChipTxtActive:  { color: Colors.white },
 });

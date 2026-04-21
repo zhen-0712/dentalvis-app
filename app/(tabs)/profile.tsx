@@ -85,7 +85,7 @@ export default function ProfileScreen() {
             </LinearGradient>
           </View>
           <Text style={styles.userName}>{user.name}</Text>
-          <Text style={styles.userEmail} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          <Text style={styles.userEmail} numberOfLines={1}>
             {user.email}
           </Text>
         </View>
@@ -98,7 +98,7 @@ export default function ProfileScreen() {
                 <Feather name={row.icon} size={14} color={Colors.jade} />
               </View>
               <Text style={styles.infoLabel}>{row.label}</Text>
-              <Text style={styles.infoValue}>{row.value}</Text>
+              <Text style={styles.infoValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{row.value}</Text>
             </View>
           ))}
         </View>
@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
   },
   cardBanner: {
     width: '100%',
-    height: 90,
+    height: 110,
     overflow: 'hidden',
   },
   bannerDeco1: {
@@ -208,27 +208,29 @@ const styles = StyleSheet.create({
     top: -20, left: 20,
   },
   avatarWrap: {
-    marginTop: -38,
+    marginTop: -44,
     borderWidth: 3,
     borderColor: Colors.white,
-    borderRadius: 42,
+    borderRadius: 48,
     ...Shadows.md,
   },
   avatar: {
-    width: 76, height: 76,
-    borderRadius: 38,
+    width: 88, height: 88,
+    borderRadius: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    fontFamily: FontFamilies.display, fontSize: 34, color: Colors.white,
+    fontFamily: FontFamilies.display, fontSize: 38, color: Colors.white,
   },
   userName: {
-    fontFamily: FontFamilies.display, fontSize: 24, color: Colors.ink,
-    marginTop: 12, marginBottom: 4,
+    fontFamily: FontFamilies.display, fontSize: 26, color: Colors.ink,
+    marginTop: 14, marginBottom: 6,
   },
   userEmail: {
-    fontFamily: FontFamilies.body, fontSize: 14, color: Colors.muted, marginBottom: 24,
+    fontFamily: FontFamilies.body, fontSize: 13, color: Colors.muted,
+    marginBottom: 40, paddingHorizontal: 28, textAlign: 'center',
+    lineHeight: 20,
   },
 
   infoList: {
@@ -263,7 +265,7 @@ const styles = StyleSheet.create({
   },
   infoValue: {
     fontFamily: FontFamilies.bodyMed, fontSize: 13, color: Colors.ink,
-    flexShrink: 1, textAlign: 'right',
+    flex: 1, textAlign: 'right',
   },
 
   dangerBtn: {

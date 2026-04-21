@@ -72,12 +72,13 @@ export async function fetchAnalyses() {
 }
 
 // ===== Submit =====
-export async function submitInit(files: Record<string, { uri: string; name: string; type: string }>) {
+export async function submitInit(files: Record<string, { uri: string; name: string; type: string }>, mirror = false) {
   const headers = await authHeaders();
   const formData = new FormData();
   for (const [view, file] of Object.entries(files)) {
     formData.append(view, { uri: file.uri, name: `${view}.jpg`, type: 'image/jpeg' } as any);
   }
+  formData.append('mirror', mirror ? '1' : '0');
   const res = await fetch(`${API_BASE}/init`, {
     method: 'POST',
     headers,
@@ -86,12 +87,13 @@ export async function submitInit(files: Record<string, { uri: string; name: stri
   return res.json();
 }
 
-export async function submitPlaque(files: Record<string, { uri: string; name: string; type: string }>) {
+export async function submitPlaque(files: Record<string, { uri: string; name: string; type: string }>, mirror = false) {
   const headers = await authHeaders();
   const formData = new FormData();
   for (const [view, file] of Object.entries(files)) {
     formData.append(view, { uri: file.uri, name: `${view}.jpg`, type: 'image/jpeg' } as any);
   }
+  formData.append('mirror', mirror ? '1' : '0');
   const res = await fetch(`${API_BASE}/plaque`, {
     method: 'POST',
     headers,

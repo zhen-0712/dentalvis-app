@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   heroTitle: {
-    fontFamily: FontFamilies.display,
+    fontFamily: FontFamilies.heading,
     fontSize: 32,
     color: Colors.white,
     lineHeight: 40,

@@ -111,13 +111,14 @@ function calcPlaqueAccuracy(stats: any, toothData: any) {
 }
 
 // ===== AccuracyBars component =====
-function AccuracyBars({ title, grade, score, bars }: {
+function AccuracyBars({ title, grade, score, bars, bgColor }: {
   title: string; grade: string; score: number;
   bars: { label: string; value: number; sub: boolean }[];
+  bgColor?: string;
 }) {
   const color = gradeColor(grade);
   return (
-    <View style={ab.wrap}>
+    <View style={[ab.wrap, bgColor ? { backgroundColor: bgColor } : null]}>
       <View style={ab.header}>
         <Text style={ab.title}>{title}</Text>
         <View style={[ab.gradeBadge, { backgroundColor: color }]}>
@@ -268,10 +269,14 @@ function PlaqueChart({ summary, neverDetected }: {
             const isMissing = missingSet.has(n);
             const px  = isMissing ? 0 : getPx(n);
             const pct = isMissing ? 0 : Math.round((px / maxPx) * 100);
+            const fillOpacity = px > 0 ? 0.28 + (pct / 100) * 0.55 : 0;
             return (
               <View key={n} style={[tc.chip, tc.chipEmpty, { overflow: 'hidden' }]}>
                 {!isMissing && px > 0 && (
-                  <View style={[pc.fill, { height: `${Math.max(15, pct)}%` as any }]} />
+                  <View style={[pc.fill, {
+                    height: `${Math.max(15, pct)}%` as any,
+                    backgroundColor: `rgba(35,157,202,${fillOpacity.toFixed(2)})`,
+                  }]} />
                 )}
                 {isMissing && <View style={pc.missingFill} />}
                 <Text style={[tc.num, { color: isMissing ? Colors.redPlaque : px > 0 ? Colors.ink : Colors.linenDark }]}>
@@ -291,7 +296,7 @@ function PlaqueChart({ summary, neverDetected }: {
       <View style={tc.divider} />
       {renderRow(FDI_LOWER, '下顎')}
       <View style={tc.legend}>
-        <View style={tc.legendItem}><View style={[tc.legendDot, { backgroundColor: 'rgba(192,57,43,0.5)' }]} /><Text style={tc.legendText}>菌斑 (越深越多)</Text></View>
+        <View style={tc.legendItem}><View style={[tc.legendDot, { backgroundColor: 'rgba(35,157,202,0.65)' }]} /><Text style={tc.legendText}>菌斑 (越深越多)</Text></View>
         {(neverDetected?.length ?? 0) > 0 && (
           <View style={tc.legendItem}><View style={[tc.legendDot, { backgroundColor: 'rgba(192,57,43,0.15)' }]} /><Text style={tc.legendText}>缺牙</Text></View>
         )}
@@ -317,20 +322,26 @@ function BadgeList({ items, color }: { items: number[]; color: string }) {
 // ===== Main Screen =====
 export default function ScanScreen() {
   const [mode, setMode]             = useState<Mode>('init');
+  const [mirror, setMirror]         = useState(false);   // true = rear camera (self-shot), needs H-flip
   const [files, setFiles]           = useState<FileMap>({});
   const [modelReady, setModelReady] = useState(false);
   const [status, setStatus]         = useState<'idle' | 'uploading' | 'processing' | 'done' | 'failed'>('idle');
   const [step, setStep]             = useState('');
   const [result, setResult]         = useState<any>(null);
   const [errorMsg, setErrorMsg]     = useState('');
-  const [modelUrl, setModelUrl]     = useState('');
-  const [existingModelUrl, setExistingModelUrl] = useState('');
+  const [modelUrl, setModelUrl]           = useState('');
+  const [existingModelUrl, setExistingModelUrl]   = useState('');
+  const [existingPlaqueUrl, setExistingPlaqueUrl] = useState('');
 
   useEffect(() => {
     fetchModelStatus().then(async d => {
       setModelReady(d.model_ready);
       if (d.model_ready) setExistingModelUrl(await getFileUrl('custom_real_teeth.glb'));
     }).catch(() => {});
+    // Try to load existing plaque model URL (may 404 if never run)
+    getFileUrl('plaque_by_fdi.glb').then(url =>
+      fetch(url, { method: 'HEAD' }).then(r => { if (r.ok) setExistingPlaqueUrl(url); }).catch(() => {})
+    ).catch(() => {});
   }, []);
 
   const checkQuality = (asset: ImagePicker.ImagePickerAsset) => {
@@ -386,7 +397,7 @@ export default function ScanScreen() {
     setErrorMsg('');
     try {
       const fn   = isInit ? submitInit : submitPlaque;
-      const data = await fn(files as Record<ViewKey, any>);
+      const data = await fn(files as Record<ViewKey, any>, mirror);
       if (!data.task_id) throw new Error('伺服器未回傳 task_id');
       setStatus('processing');
       const timer = setInterval(async () => {
@@ -404,6 +415,8 @@ export default function ScanScreen() {
             if (isInit) {
               setModelReady(true);
               setExistingModelUrl(url);
+            } else {
+              setExistingPlaqueUrl(url);
             }
           } else if (t.status === 'failed') {
             clearInterval(timer);
@@ -484,7 +497,7 @@ export default function ScanScreen() {
         </View>
 
         {/* Existing model shortcut */}
-        {status === 'idle' && !!existingModelUrl && (
+        {status === 'idle' && !!existingModelUrl && mode === 'init' && (
           <Pressable style={styles.existingModelBtn}
             onPress={() => open3D(existingModelUrl, '個人化 3D 模型')}>
             <View style={styles.existingModelLeft}>
@@ -494,6 +507,22 @@ export default function ScanScreen() {
               </LinearGradient>
               <View>
                 <Text style={styles.existingModelTitle}>查看最新 3D 模型</Text>
+                <Text style={styles.existingModelSub}>點擊進入全螢幕互動檢視</Text>
+              </View>
+            </View>
+            <Feather name="chevron-right" size={16} color={Colors.muted} />
+          </Pressable>
+        )}
+        {status === 'idle' && !!existingPlaqueUrl && mode === 'plaque' && (
+          <Pressable style={[styles.existingModelBtn, styles.existingModelBtnPlaque]}
+            onPress={() => open3D(existingPlaqueUrl, '菌斑分布 3D 模型')}>
+            <View style={styles.existingModelLeft}>
+              <LinearGradient colors={Gradients.plaque} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={styles.existingModelIcon}>
+                <Feather name="box" size={16} color={Colors.white} />
+              </LinearGradient>
+              <View>
+                <Text style={styles.existingModelTitle}>查看上次菌斑 3D 模型</Text>
                 <Text style={styles.existingModelSub}>點擊進入全螢幕互動檢視</Text>
               </View>
             </View>
@@ -517,6 +546,23 @@ export default function ScanScreen() {
                   style={[styles.progressFill, { width: `${(filledCount / VIEWS.length) * 100}%` as any }]} />
               </View>
             </View>
+
+            {/* Camera mode toggle */}
+            <Pressable style={styles.mirrorRow} onPress={() => setMirror(m => !m)}>
+              <View style={[styles.mirrorToggle, mirror && styles.mirrorToggleOn]}>
+                <View style={[styles.mirrorThumb, mirror && styles.mirrorThumbOn]} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.mirrorLabel}>
+                  {mirror ? '後置相機（自行拍攝）' : '前置相機（自拍）'}
+                </Text>
+                <Text style={styles.mirrorHint}>
+                  {mirror ? '照片將自動水平翻轉以修正左右方向' : '前置相機，左右方向已正確'}
+                </Text>
+              </View>
+              <Feather name={mirror ? 'camera' : 'camera'} size={16}
+                color={mirror ? Colors.aqua : Colors.muted} />
+            </Pressable>
 
             <View style={styles.uploadGrid}>
               {VIEWS.map((view, idx) => {
@@ -588,7 +634,9 @@ export default function ScanScreen() {
           <View style={styles.stateCard}>
 
             <View style={styles.doneHeader}>
-              <LinearGradient colors={Gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              <LinearGradient
+                colors={isInit ? Gradients.primary : Gradients.plaque}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                 style={styles.doneIconWrap}>
                 <Feather name="check" size={26} color={Colors.white} />
               </LinearGradient>
@@ -599,7 +647,7 @@ export default function ScanScreen() {
             </View>
 
             {/* Key Stats */}
-            <View style={styles.statRow}>
+            <View style={[styles.statRow, !isInit && styles.statRowPlaque]}>
               {isInit && result.tooth_analysis && (() => {
                 const t = result.tooth_analysis;
                 return (
@@ -665,7 +713,9 @@ export default function ScanScreen() {
             {!!modelUrl && (
               <Pressable style={styles.viewerBtn}
                 onPress={() => open3D(modelUrl, isInit ? '個人化 3D 模型' : '菌斑分布 3D 模型')}>
-                <LinearGradient colors={Gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                <LinearGradient
+                  colors={isInit ? Gradients.hero : Gradients.plaque}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                   style={styles.viewerBtnGrad}>
                   <Feather name="box" size={18} color={Colors.white} />
                   <Text style={styles.viewerBtnText}>全螢幕查看 3D 模型</Text>
@@ -675,7 +725,7 @@ export default function ScanScreen() {
             )}
 
             {/* Tooth / Plaque Chart */}
-            <View style={styles.chartBlock}>
+            <View style={[styles.chartBlock, !isInit && styles.chartBlockPlaque]}>
               <Text style={styles.blockLabel}>{isInit ? '牙位偵測分布圖' : '菌斑分布圖'}</Text>
               {isInit && result.tooth_analysis && (
                 <ToothChart
@@ -713,12 +763,12 @@ export default function ScanScreen() {
               <AccuracyBars title="模型還原準確度" grade={initAcc.grade} score={initAcc.overallScore} bars={initAcc.bars} />
             )}
             {!isInit && plaqueAcc && (
-              <AccuracyBars title="菌斑分析準確度" grade={plaqueAcc.grade} score={plaqueAcc.overallScore} bars={plaqueAcc.bars} />
+              <AccuracyBars title="菌斑分析準確度" grade={plaqueAcc.grade} score={plaqueAcc.overallScore} bars={plaqueAcc.bars} bgColor="rgba(35,157,202,0.06)" />
             )}
 
-            <Pressable style={styles.resetBtn} onPress={reset}>
-              <Feather name="refresh-cw" size={14} color={Colors.jade} />
-              <Text style={styles.resetBtnText}>再次掃描</Text>
+            <Pressable style={[styles.resetBtn, !isInit && styles.resetBtnPlaque]} onPress={reset}>
+              <Feather name="refresh-cw" size={14} color={isInit ? Colors.jade : Colors.aqua} />
+              <Text style={[styles.resetBtnText, !isInit && styles.resetBtnTextPlaque]}>再次掃描</Text>
             </Pressable>
           </View>
         )}
@@ -794,6 +844,7 @@ const styles = StyleSheet.create({
     padding: 14, marginBottom: 14,
     borderWidth: 1, borderColor: Colors.jadeAlpha12, ...Shadows.sm,
   },
+  existingModelBtnPlaque: { borderColor: 'rgba(35,157,202,0.18)' },
   existingModelLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
   existingModelIcon:  { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   existingModelTitle: { fontFamily: FontFamilies.bodyMed, fontSize: 14, color: Colors.ink },
@@ -805,6 +856,23 @@ const styles = StyleSheet.create({
   progressCount:  { fontFamily: FontFamilies.bodyMed, fontSize: 13 },
   progressBar:    { height: 5, backgroundColor: Colors.jadeAlpha08, borderRadius: 99, overflow: 'hidden' },
   progressFill:   { height: '100%', borderRadius: 99 },
+
+  mirrorRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.white, borderRadius: Radius.md,
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.jadeAlpha12,
+  },
+  mirrorToggle: {
+    width: 40, height: 22, borderRadius: 11,
+    backgroundColor: Colors.linenDark,
+    padding: 2, justifyContent: 'center',
+  },
+  mirrorToggleOn:  { backgroundColor: Colors.aqua },
+  mirrorThumb:     { width: 18, height: 18, borderRadius: 9, backgroundColor: Colors.white },
+  mirrorThumbOn:   { alignSelf: 'flex-end' },
+  mirrorLabel:     { fontFamily: FontFamilies.bodyMed, fontSize: 13, color: Colors.ink },
+  mirrorHint:      { fontFamily: FontFamilies.body, fontSize: 11, color: Colors.muted, marginTop: 1 },
 
   uploadGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   uploadCard: {
@@ -834,31 +902,35 @@ const styles = StyleSheet.create({
 
   processingHeader: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 24 },
   processingRing:   { width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.jadeAlpha08, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  stateTitle: { fontFamily: FontFamilies.display, fontSize: 20, color: Colors.ink, marginBottom: 4 },
+  stateTitle: { fontFamily: FontFamilies.heading, fontSize: 20, color: Colors.ink, marginBottom: 4 },
   stateHint:  { fontFamily: FontFamilies.body,    fontSize: 13, color: Colors.muted },
 
   doneHeader:  { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20 },
   doneIconWrap: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   errorIconWrap: { width: 80, height: 80, borderRadius: 40, alignSelf: 'center', backgroundColor: 'rgba(192,57,43,0.07)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
 
-  statRow:     { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12, backgroundColor: Colors.surface, borderRadius: Radius.md, paddingVertical: 16, paddingHorizontal: 20, marginBottom: 16, justifyContent: 'center' },
+  statRow:      { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12, backgroundColor: Colors.surface, borderRadius: Radius.md, paddingVertical: 16, paddingHorizontal: 20, marginBottom: 16, justifyContent: 'center' },
+  statRowPlaque: { backgroundColor: 'rgba(35,157,202,0.06)' },
   statItem:    { alignItems: 'center', minWidth: 56 },
   statVal:     { fontFamily: FontFamilies.display, fontSize: 30, color: Colors.jade, lineHeight: 34 },
   statLabel:   { fontFamily: FontFamilies.body, fontSize: 11, color: Colors.muted, marginTop: 2, textAlign: 'center' },
   statDivider: { width: 1, height: 34, backgroundColor: Colors.jadeAlpha12 },
 
   viewerBtn:     { borderRadius: Radius.xl, overflow: 'hidden', marginBottom: 16, ...Shadows.hero },
-  viewerBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16 },
+  viewerBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16, paddingHorizontal: 16 },
   viewerBtnText: { fontFamily: FontFamilies.bodyMed, fontSize: 15, color: Colors.white, flex: 1, textAlign: 'center' },
 
-  chartBlock: { backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 16, marginBottom: 12 },
+  chartBlock:       { backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 16, marginBottom: 12 },
+  chartBlockPlaque: { backgroundColor: 'rgba(35,157,202,0.06)' },
   blockLabel: { fontFamily: FontFamilies.bodyMed, fontSize: 11, color: Colors.muted, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 },
 
   badgeBlock:      { backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 14, marginBottom: 10 },
   badgeBlockTitle: { fontFamily: FontFamilies.bodyMed, fontSize: 12, color: Colors.inkSoft, marginBottom: 10 },
 
-  resetBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 13, borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.jade, marginTop: 12 },
-  resetBtnText: { fontFamily: FontFamilies.bodyMed, fontSize: 14, color: Colors.jade },
+  resetBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 13, borderRadius: Radius.xl, borderWidth: 1.5, borderColor: Colors.jade, marginTop: 12 },
+  resetBtnText:      { fontFamily: FontFamilies.bodyMed, fontSize: 14, color: Colors.jade },
+  resetBtnPlaque:     { borderColor: Colors.aqua },
+  resetBtnTextPlaque: { color: Colors.aqua },
 });
 
 // Step Progress Styles
@@ -887,12 +959,12 @@ const tc = StyleSheet.create({
   wrap:     { gap: 8 },
   jawLabel: { fontFamily: FontFamilies.bodyMed, fontSize: 11, color: Colors.muted, letterSpacing: 0.3, marginBottom: 4 },
   row:      { flexDirection: 'row', gap: 4, paddingVertical: 2 },
-  chip:     { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  chip:     { width: 26, height: 26, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   chipPresent: { backgroundColor: Colors.jadeAlpha12 },
   chipSuspect: { backgroundColor: 'rgba(232,160,32,0.12)', borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(232,160,32,0.30)' },
   chipMissing: { backgroundColor: 'rgba(192,57,43,0.09)', borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(192,57,43,0.25)' },
   chipEmpty:   { backgroundColor: Colors.jadeAlpha04 },
-  num:         { fontFamily: FontFamilies.bodyMed, fontSize: 8 },
+  num:         { fontFamily: FontFamilies.bodyMed, fontSize: 7 },
   numPresent:  { color: Colors.jade },
   numSuspect:  { color: '#c07800' },
   numMissing:  { color: Colors.redPlaque },

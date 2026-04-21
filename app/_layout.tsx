@@ -11,6 +11,7 @@ export default function RootLayout() {
     DMSans_400Regular,
     DMSans_500Medium,
     DMSerifDisplay_400Regular,
+    JFOpenHuninn: require('../assets/fonts/jf-openhuninn.ttf'),
   });
 
   if (!fontsLoaded) {
