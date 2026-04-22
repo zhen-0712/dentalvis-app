@@ -9,7 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Colors, Radius, Shadows, FontFamilies, Gradients } from '../../constants/theme';
-import { submitInit, submitPlaque, fetchTaskStatus, fetchModelStatus, getFileUrl } from '../../services/api';
+import { submitInit, submitPlaque, fetchTaskStatus, fetchModelStatus, getFileUrl, checkPhotoQuality } from '../../services/api';
 
 // ===== Step Definitions =====
 const INIT_STEPS  = [
@@ -27,6 +27,8 @@ const VIEWS = ['front', 'left_side', 'right_side', 'upper_occlusal', 'lower_occl
 type ViewKey = typeof VIEWS[number];
 type Mode = 'init' | 'plaque';
 type FileMap = Partial<Record<ViewKey, { uri: string; name: string; type: string }>>;
+type QualityState = 'checking' | 'ok' | 'warn';
+type QualityMap  = Partial<Record<ViewKey, { state: QualityState; issue?: string; tip?: string }>>;
 
 const VIEW_LABELS: Record<ViewKey, string> = {
   front:          '正面',
@@ -324,6 +326,7 @@ export default function ScanScreen() {
   const [mode, setMode]             = useState<Mode>('init');
   const [mirror, setMirror]         = useState(false);   // true = rear camera (self-shot), needs H-flip
   const [files, setFiles]           = useState<FileMap>({});
+  const [quality, setQuality]       = useState<QualityMap>({});
   const [modelReady, setModelReady] = useState(false);
   const [status, setStatus]         = useState<'idle' | 'uploading' | 'processing' | 'done' | 'failed'>('idle');
   const [step, setStep]             = useState('');
@@ -357,6 +360,25 @@ export default function ScanScreen() {
       ]);
   };
 
+  const runQualityCheck = async (uri: string, view: ViewKey) => {
+    setQuality(prev => ({ ...prev, [view]: { state: 'checking' } }));
+    try {
+      const r = await checkPhotoQuality(uri, view);
+      const isOk = r?.ok !== false || !r?.issues?.length;
+      setQuality(prev => ({
+        ...prev,
+        [view]: {
+          state: isOk ? 'ok' : 'warn',
+          issue: r?.issues?.[0],
+          tip:   r?.tips?.[0],
+        },
+      }));
+    } catch {
+      // Network error or parse failure — don't block the user
+      setQuality(prev => ({ ...prev, [view]: { state: 'ok' } }));
+    }
+  };
+
   const pickImage = async (view: ViewKey) => {
     Alert.alert('選擇照片', undefined, [
       {
@@ -368,6 +390,7 @@ export default function ScanScreen() {
           if (!res.canceled && res.assets[0]) {
             checkQuality(res.assets[0]);
             setFiles(p => ({ ...p, [view]: { uri: res.assets[0].uri, name: `${view}.jpg`, type: 'image/jpeg' } }));
+            runQualityCheck(res.assets[0].uri, view);
           }
         },
       },
@@ -380,6 +403,7 @@ export default function ScanScreen() {
           if (!res.canceled && res.assets[0]) {
             checkQuality(res.assets[0]);
             setFiles(p => ({ ...p, [view]: { uri: res.assets[0].uri, name: `${view}.jpg`, type: 'image/jpeg' } }));
+            runQualityCheck(res.assets[0].uri, view);
           }
         },
       },
@@ -433,6 +457,7 @@ export default function ScanScreen() {
 
   const reset = () => {
     setFiles({});
+    setQuality({});
     setStatus('idle');
     setStep('');
     setResult(null);
@@ -579,6 +604,27 @@ export default function ScanScreen() {
                         <View style={[styles.checkMark, { backgroundColor: isInit ? Colors.jade : Colors.aqua }]}>
                           <Feather name="check" size={11} color={Colors.white} />
                         </View>
+                        {/* Quality badge */}
+                        {quality[view]?.state === 'checking' && (
+                          <View style={[styles.qualityBadge, styles.qualityChecking]}>
+                            <ActivityIndicator size={9} color={Colors.white} />
+                            <Text style={styles.qualityBadgeTxt}>檢查中</Text>
+                          </View>
+                        )}
+                        {quality[view]?.state === 'ok' && (
+                          <View style={[styles.qualityBadge, styles.qualityOk]}>
+                            <Feather name="check-circle" size={9} color={Colors.white} />
+                            <Text style={styles.qualityBadgeTxt}>品質良好</Text>
+                          </View>
+                        )}
+                        {quality[view]?.state === 'warn' && (
+                          <View style={[styles.qualityBadge, styles.qualityWarn]}>
+                            <Feather name="alert-circle" size={9} color={Colors.white} />
+                            <Text style={styles.qualityBadgeTxt} numberOfLines={1}>
+                              {quality[view]?.issue ?? '品質提醒'}
+                            </Text>
+                          </View>
+                        )}
                       </>
                     ) : (
                       <View style={styles.uploadPlaceholder}>
@@ -593,6 +639,21 @@ export default function ScanScreen() {
                 );
               })}
             </View>
+
+            {/* Quality tips summary */}
+            {VIEWS.some(v => quality[v]?.state === 'warn') && (
+              <View style={styles.qualityTipBox}>
+                {VIEWS.filter(v => quality[v]?.state === 'warn').map(v => (
+                  <View key={v} style={styles.qualityTipRow}>
+                    <Feather name="alert-circle" size={12} color="#e8a020" />
+                    <Text style={styles.qualityTipTxt}>
+                      <Text style={styles.qualityTipView}>{VIEW_LABELS[v]}：</Text>
+                      {quality[v]?.tip ?? quality[v]?.issue}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             <LinearGradient colors={isInit ? Gradients.primary : Gradients.plaque}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -889,6 +950,25 @@ const styles = StyleSheet.create({
   previewOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 20, paddingBottom: 9, paddingHorizontal: 10 },
   previewLabel:   { fontFamily: FontFamilies.bodyMed, fontSize: 12, color: Colors.white },
   checkMark: { position: 'absolute', top: 8, right: 8, width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+
+  qualityBadge: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4,
+  },
+  qualityChecking: { backgroundColor: 'rgba(30,30,30,0.55)' },
+  qualityOk:       { backgroundColor: 'rgba(3,105,94,0.80)' },
+  qualityWarn:     { backgroundColor: 'rgba(200,130,0,0.85)' },
+  qualityBadgeTxt: { fontFamily: FontFamilies.bodyMed, fontSize: 10, color: Colors.white, flexShrink: 1 },
+  qualityTipBox: {
+    backgroundColor: 'rgba(232,160,32,0.08)',
+    borderRadius: Radius.md, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: 'rgba(232,160,32,0.20)',
+    gap: 6,
+  },
+  qualityTipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
+  qualityTipTxt: { fontFamily: FontFamilies.body, fontSize: 12, color: Colors.ink, flex: 1, lineHeight: 18 },
+  qualityTipView:{ fontFamily: FontFamilies.bodyMed, fontSize: 12, color: '#c07800' },
 
   submitBtn:         { borderRadius: Radius.xl, marginBottom: 8, ...Shadows.hero },
   submitBtnDisabled: { opacity: 0.4 },

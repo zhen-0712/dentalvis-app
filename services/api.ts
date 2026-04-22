@@ -102,6 +102,18 @@ export async function submitPlaque(files: Record<string, { uri: string; name: st
   return res.json();
 }
 
+// ===== Photo Quality Check =====
+export async function checkPhotoQuality(uri: string, view: string): Promise<{
+  ok: boolean; issues: string[]; tips: string[];
+  stats: { brightness: number; sharpness: number; toothArea: string };
+}> {
+  const formData = new FormData();
+  formData.append('file', { uri, name: 'check.jpg', type: 'image/jpeg' } as any);
+  formData.append('view', view);
+  const res = await fetch(`${API_BASE}/check_photo`, { method: 'POST', body: formData });
+  return res.json();
+}
+
 // ===== Task Status =====
 export async function fetchTaskStatus(taskId: string) {
   const res = await fetch(`${API_BASE}/status/${taskId}`);
