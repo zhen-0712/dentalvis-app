@@ -9,7 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Colors, Radius, Shadows, FontFamilies, Gradients } from '../../constants/theme';
-import { submitInit, submitPlaque, fetchTaskStatus, fetchModelStatus, getFileUrl, checkPhotoQuality } from '../../services/api';
+import { submitInit, submitInitMulti, submitPlaque, fetchTaskStatus, fetchModelStatus, getFileUrl, checkPhotoQuality } from '../../services/api';
 
 // ===== Step Definitions =====
 const INIT_STEPS  = [
@@ -27,6 +27,7 @@ const VIEWS = ['front', 'left_side', 'right_side', 'upper_occlusal', 'lower_occl
 type ViewKey = typeof VIEWS[number];
 type Mode = 'init' | 'plaque';
 type FileMap = Partial<Record<ViewKey, { uri: string; name: string; type: string }>>;
+type MultiFileMap = Partial<Record<ViewKey, Array<{ uri: string; name: string; type: string }>>>;
 type QualityState = 'checking' | 'ok' | 'warn';
 type QualityMap  = Partial<Record<ViewKey, { state: QualityState; issue?: string; tip?: string }>>;
 
@@ -324,8 +325,10 @@ function BadgeList({ items, color }: { items: number[]; color: string }) {
 // ===== Main Screen =====
 export default function ScanScreen() {
   const [mode, setMode]             = useState<Mode>('init');
+  const [initUploadMode, setInitUploadMode] = useState<'single' | 'multi'>('single');
   const [mirror, setMirror]         = useState(false);   // true = rear camera (self-shot), needs H-flip
   const [files, setFiles]           = useState<FileMap>({});
+  const [multiFiles, setMultiFiles] = useState<MultiFileMap>({});
   const [quality, setQuality]       = useState<QualityMap>({});
   const [modelReady, setModelReady] = useState(false);
   const [status, setStatus]         = useState<'idle' | 'uploading' | 'processing' | 'done' | 'failed'>('idle');
@@ -411,17 +414,56 @@ export default function ScanScreen() {
     ]);
   };
 
-  const allFilled   = VIEWS.every(v => files[v]);
-  const filledCount = VIEWS.filter(v => files[v]).length;
   const isInit      = mode === 'init';
+  const isMultiInit = isInit && initUploadMode === 'multi';
+  const pickMultiImages = async (view: ViewKey) => {
+    const existing = multiFiles[view]?.length ?? 0;
+    const options: any[] = [
+      {
+        text: '從相簿選取（多張）',
+        onPress: async () => {
+          const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (!perm.granted) { Alert.alert('請允許相片權限'); return; }
+          const res = await ImagePicker.launchImageLibraryAsync({
+            quality: 0.92, exif: false, allowsMultipleSelection: true,
+          });
+          if (!res.canceled && res.assets.length > 0) {
+            const newFiles = res.assets.map(a => ({ uri: a.uri, name: `${view}.jpg`, type: 'image/jpeg' }));
+            setMultiFiles(p => ({ ...p, [view]: [...(p[view] || []), ...newFiles] }));
+          }
+        },
+      },
+    ];
+    if (existing > 0) {
+      options.push({
+        text: `清除此角度（${existing} 張）`,
+        style: 'destructive',
+        onPress: () => setMultiFiles(p => ({ ...p, [view]: [] })),
+      });
+    }
+    options.push({ text: '取消', style: 'cancel' });
+    Alert.alert(VIEW_LABELS[view], undefined, options);
+  };
+
+  const allFilled   = isMultiInit
+    ? VIEWS.every(v => (multiFiles[v]?.length ?? 0) > 0)
+    : VIEWS.every(v => files[v]);
+  const filledCount = isMultiInit
+    ? VIEWS.filter(v => (multiFiles[v]?.length ?? 0) > 0).length
+    : VIEWS.filter(v => files[v]).length;
 
   const startAnalysis = async () => {
     if (!allFilled) return;
     setStatus('uploading');
     setErrorMsg('');
     try {
-      const fn   = isInit ? submitInit : submitPlaque;
-      const data = await fn(files as Record<ViewKey, any>, mirror);
+      let data: any;
+      if (isMultiInit) {
+        data = await submitInitMulti(multiFiles as Record<ViewKey, any>, mirror);
+      } else {
+        const fn = isInit ? submitInit : submitPlaque;
+        data = await fn(files as Record<ViewKey, any>, mirror);
+      }
       if (!data.task_id) throw new Error('伺服器未回傳 task_id');
       setStatus('processing');
       const timer = setInterval(async () => {
@@ -458,6 +500,7 @@ export default function ScanScreen() {
   const reset = () => {
     setFiles({});
     setQuality({});
+    setMultiFiles({});
     setStatus('idle');
     setStep('');
     setResult(null);
@@ -520,6 +563,33 @@ export default function ScanScreen() {
             </View>
           )}
         </View>
+
+        {/* Init upload mode toggle */}
+        {mode === 'init' && status === 'idle' && (
+          <View style={styles.uploadModeWrap}>
+            <View style={styles.uploadModeToggleRow}>
+              <Pressable
+                style={[styles.uploadModeBtn, initUploadMode === 'single' && styles.uploadModeBtnActive]}
+                onPress={() => { setInitUploadMode('single'); setMultiFiles({}); }}
+              >
+                <Feather name="camera" size={12} color={initUploadMode === 'single' ? Colors.white : Colors.muted} />
+                <Text style={[styles.uploadModeBtnTxt, initUploadMode === 'single' && styles.uploadModeBtnTxtActive]}>單張照片</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.uploadModeBtn, initUploadMode === 'multi' && styles.uploadModeBtnActive]}
+                onPress={() => { setInitUploadMode('multi'); setFiles({}); setQuality({}); }}
+              >
+                <Feather name="layers" size={12} color={initUploadMode === 'multi' ? Colors.white : Colors.muted} />
+                <Text style={[styles.uploadModeBtnTxt, initUploadMode === 'multi' && styles.uploadModeBtnTxtActive]}>多張照片</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.uploadModeHint}>
+              {initUploadMode === 'multi'
+                ? '每個角度可上傳多張，辨識結果取聯集以提高準確率'
+                : '每個角度上傳一張照片'}
+            </Text>
+          </View>
+        )}
 
         {/* Existing model shortcut */}
         {status === 'idle' && !!existingModelUrl && mode === 'init' && (
@@ -591,49 +661,77 @@ export default function ScanScreen() {
 
             <View style={styles.uploadGrid}>
               {VIEWS.map((view, idx) => {
-                const file = files[view];
+                const file       = files[view];
+                const mFiles     = multiFiles[view] ?? [];
+                const mCount     = mFiles.length;
+                const firstMFile = mFiles[0];
+
                 return (
-                  <Pressable key={view} style={styles.uploadCard} onPress={() => pickImage(view)}>
-                    {file ? (
-                      <>
-                        <Image source={{ uri: file.uri }} style={styles.preview} />
-                        <LinearGradient colors={['transparent', 'rgba(26,36,32,0.72)']}
-                          style={styles.previewOverlay}>
-                          <Text style={styles.previewLabel}>{VIEW_LABELS[view]}</Text>
-                        </LinearGradient>
-                        <View style={[styles.checkMark, { backgroundColor: isInit ? Colors.jade : Colors.aqua }]}>
-                          <Feather name="check" size={11} color={Colors.white} />
+                  <Pressable key={view} style={styles.uploadCard}
+                    onPress={() => isMultiInit ? pickMultiImages(view) : pickImage(view)}>
+                    {isMultiInit ? (
+                      firstMFile ? (
+                        <>
+                          <Image source={{ uri: firstMFile.uri }} style={styles.preview} />
+                          <LinearGradient colors={['transparent', 'rgba(26,36,32,0.72)']}
+                            style={styles.previewOverlay}>
+                            <Text style={styles.previewLabel}>{VIEW_LABELS[view]}</Text>
+                          </LinearGradient>
+                          <View style={styles.multiCountBadge}>
+                            <Feather name="layers" size={9} color={Colors.white} />
+                            <Text style={styles.multiCountText}>{mCount} 張</Text>
+                          </View>
+                        </>
+                      ) : (
+                        <View style={styles.uploadPlaceholder}>
+                          <View style={[styles.uploadIconWrap, { backgroundColor: Colors.jadeAlpha08 }]}>
+                            <Feather name="layers" size={20} color={Colors.jade} />
+                          </View>
+                          <Text style={styles.uploadNum}>{idx + 1}</Text>
+                          <Text style={styles.uploadLabel}>{VIEW_LABELS[view]}</Text>
                         </View>
-                        {/* Quality badge */}
-                        {quality[view]?.state === 'checking' && (
-                          <View style={[styles.qualityBadge, styles.qualityChecking]}>
-                            <ActivityIndicator size={9} color={Colors.white} />
-                            <Text style={styles.qualityBadgeTxt}>檢查中</Text>
-                          </View>
-                        )}
-                        {quality[view]?.state === 'ok' && (
-                          <View style={[styles.qualityBadge, styles.qualityOk]}>
-                            <Feather name="check-circle" size={9} color={Colors.white} />
-                            <Text style={styles.qualityBadgeTxt}>品質良好</Text>
-                          </View>
-                        )}
-                        {quality[view]?.state === 'warn' && (
-                          <View style={[styles.qualityBadge, styles.qualityWarn]}>
-                            <Feather name="alert-circle" size={9} color={Colors.white} />
-                            <Text style={styles.qualityBadgeTxt} numberOfLines={1}>
-                              {quality[view]?.issue ?? '品質提醒'}
-                            </Text>
-                          </View>
-                        )}
-                      </>
+                      )
                     ) : (
-                      <View style={styles.uploadPlaceholder}>
-                        <View style={[styles.uploadIconWrap, { backgroundColor: isInit ? Colors.jadeAlpha08 : 'rgba(35,157,202,0.08)' }]}>
-                          <Feather name="camera" size={20} color={isInit ? Colors.jade : Colors.aqua} />
+                      file ? (
+                        <>
+                          <Image source={{ uri: file.uri }} style={styles.preview} />
+                          <LinearGradient colors={['transparent', 'rgba(26,36,32,0.72)']}
+                            style={styles.previewOverlay}>
+                            <Text style={styles.previewLabel}>{VIEW_LABELS[view]}</Text>
+                          </LinearGradient>
+                          <View style={[styles.checkMark, { backgroundColor: isInit ? Colors.jade : Colors.aqua }]}>
+                            <Feather name="check" size={11} color={Colors.white} />
+                          </View>
+                          {quality[view]?.state === 'checking' && (
+                            <View style={[styles.qualityBadge, styles.qualityChecking]}>
+                              <ActivityIndicator size={9} color={Colors.white} />
+                              <Text style={styles.qualityBadgeTxt}>檢查中</Text>
+                            </View>
+                          )}
+                          {quality[view]?.state === 'ok' && (
+                            <View style={[styles.qualityBadge, styles.qualityOk]}>
+                              <Feather name="check-circle" size={9} color={Colors.white} />
+                              <Text style={styles.qualityBadgeTxt}>品質良好</Text>
+                            </View>
+                          )}
+                          {quality[view]?.state === 'warn' && (
+                            <View style={[styles.qualityBadge, styles.qualityWarn]}>
+                              <Feather name="alert-circle" size={9} color={Colors.white} />
+                              <Text style={styles.qualityBadgeTxt} numberOfLines={1}>
+                                {quality[view]?.issue ?? '品質提醒'}
+                              </Text>
+                            </View>
+                          )}
+                        </>
+                      ) : (
+                        <View style={styles.uploadPlaceholder}>
+                          <View style={[styles.uploadIconWrap, { backgroundColor: isInit ? Colors.jadeAlpha08 : 'rgba(35,157,202,0.08)' }]}>
+                            <Feather name="camera" size={20} color={isInit ? Colors.jade : Colors.aqua} />
+                          </View>
+                          <Text style={styles.uploadNum}>{idx + 1}</Text>
+                          <Text style={styles.uploadLabel}>{VIEW_LABELS[view]}</Text>
                         </View>
-                        <Text style={styles.uploadNum}>{idx + 1}</Text>
-                        <Text style={styles.uploadLabel}>{VIEW_LABELS[view]}</Text>
-                      </View>
+                      )
                     )}
                   </Pressable>
                 );
@@ -641,7 +739,7 @@ export default function ScanScreen() {
             </View>
 
             {/* Quality tips summary */}
-            {VIEWS.some(v => quality[v]?.state === 'warn') && (
+            {!isMultiInit && VIEWS.some(v => quality[v]?.state === 'warn') && (
               <View style={styles.qualityTipBox}>
                 {VIEWS.filter(v => quality[v]?.state === 'warn').map(v => (
                   <View key={v} style={styles.qualityTipRow}>
@@ -1011,6 +1109,32 @@ const styles = StyleSheet.create({
   resetBtnText:      { fontFamily: FontFamilies.bodyMed, fontSize: 14, color: Colors.jade },
   resetBtnPlaque:     { borderColor: Colors.aqua },
   resetBtnTextPlaque: { color: Colors.aqua },
+
+  uploadModeWrap: {
+    backgroundColor: Colors.white, borderRadius: Radius.md,
+    padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.jadeAlpha12, ...Shadows.sm,
+  },
+  uploadModeToggleRow: {
+    flexDirection: 'row', gap: 6, marginBottom: 8,
+  },
+  uploadModeBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 5, paddingVertical: 8, borderRadius: Radius.md,
+    backgroundColor: Colors.surface,
+  },
+  uploadModeBtnActive: { backgroundColor: Colors.jade },
+  uploadModeBtnTxt: { fontFamily: FontFamilies.bodyMed, fontSize: 12, color: Colors.muted },
+  uploadModeBtnTxtActive: { color: Colors.white },
+  uploadModeHint: { fontFamily: FontFamilies.body, fontSize: 11, color: Colors.muted, textAlign: 'center' },
+
+  multiCountBadge: {
+    position: 'absolute', top: 8, right: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 7, paddingVertical: 3,
+    borderRadius: 99, backgroundColor: Colors.jade,
+  },
+  multiCountText: { fontFamily: FontFamilies.bodyMed, fontSize: 9, color: Colors.white },
 });
 
 // Step Progress Styles

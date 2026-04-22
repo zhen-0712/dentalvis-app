@@ -37,8 +37,8 @@ function makeMultiAngleSnapshotHtml(glbUrl: string) {
   <script>
     const mv = document.getElementById('mv');
     const ANGLES = [
-      { label: '右側',   orbit: '90deg 75deg auto',  fov: '34deg' },
-      { label: '左側',   orbit: '270deg 75deg auto', fov: '34deg' },
+      { label: '左側',   orbit: '90deg 75deg auto',  fov: '34deg' },
+      { label: '右側',   orbit: '270deg 75deg auto', fov: '34deg' },
       { label: '正面',   orbit: '0deg 75deg auto',   fov: '34deg' },
       { label: '上俯視', orbit: '0deg 5deg auto',    fov: '38deg' },
       { label: '下俯視', orbit: '0deg 175deg auto',  fov: '38deg' },

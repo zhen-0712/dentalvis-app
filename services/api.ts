@@ -87,6 +87,27 @@ export async function submitInit(files: Record<string, { uri: string; name: stri
   return res.json();
 }
 
+export async function submitInitMulti(
+  files: Record<string, Array<{ uri: string; name: string; type: string }>>,
+  mirror = false
+) {
+  const headers = await authHeaders();
+  const formData = new FormData();
+  for (const [view, arr] of Object.entries(files)) {
+    const fileArr = Array.isArray(arr) ? arr : [arr];
+    fileArr.forEach((file, i) => {
+      formData.append(`${view}_${i}`, { uri: file.uri, name: `${view}_${i}.jpg`, type: 'image/jpeg' } as any);
+    });
+  }
+  formData.append('mirror', mirror ? '1' : '0');
+  const res = await fetch(`${API_BASE}/init_multi`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  return res.json();
+}
+
 export async function submitPlaque(files: Record<string, { uri: string; name: string; type: string }>, mirror = false) {
   const headers = await authHeaders();
   const formData = new FormData();
