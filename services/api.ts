@@ -4,7 +4,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 const API_BASE = 'http://140.115.51.163:40111';
-const TOKEN_KEY = 'dentalvis_token';
+const TOKEN_KEY = 'smileguardian_token';
 
 // ===== Token 管理 =====
 export async function getToken(): Promise<string | null> {
