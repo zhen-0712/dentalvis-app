@@ -50,7 +50,7 @@ export default function LoginScreen() {
           >
             <Feather name="activity" size={22} color={Colors.white} />
           </LinearGradient>
-          <Text style={styles.brand}>DentalVis</Text>
+          <Text style={styles.brand}>Smile Guardian</Text>
           <Text style={styles.title}>歡迎回來</Text>
           <Text style={styles.subtitle}>使用您的帳號登入</Text>
 

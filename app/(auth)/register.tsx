@@ -50,9 +50,9 @@ export default function RegisterScreen() {
             <Text style={styles.closeBtnText}>✕</Text>
           </Pressable>
 
-          <Text style={styles.brand}>DentalVis</Text>
+          <Text style={styles.brand}>Smile Guardian</Text>
           <Text style={styles.title}>建立帳號</Text>
-          <Text style={styles.subtitle}>加入 DentalVis，開始記錄你的牙齒健康</Text>
+          <Text style={styles.subtitle}>加入 Smile Guardian，開始記錄你的牙齒健康</Text>
 
           <View style={styles.form}>
             <View style={styles.inputWrap}>

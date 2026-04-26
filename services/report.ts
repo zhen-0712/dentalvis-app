@@ -341,7 +341,7 @@ export async function exportMonthlyReport(
 </head>
 <body style="padding:16px 18px">
   <div class="rpt-header">
-    <div class="rpt-header-left"><h1>DentalVis</h1><div class="sub">牙齒健康分析報告</div></div>
+    <div class="rpt-header-left"><h1>Smile Guardian</h1><div class="sub">牙齒健康分析報告</div></div>
     <div class="rpt-header-right"><div class="date">${dateStr}</div><div class="disc">僅供參考，請諮詢牙醫師</div></div>
   </div>
   ${toothSection}
@@ -352,13 +352,13 @@ export async function exportMonthlyReport(
   ${!toothSection && !plaqueSection
     ? `<div style="text-align:center;color:${C.muted};padding:40px 0;font-size:14px">尚無完成的分析記錄</div>`
     : ''}
-  <div class="rpt-footer">DentalVis &nbsp;·&nbsp; ${dateStr} &nbsp;·&nbsp; 本報告僅供個人參考，實際診斷請諮詢專業牙醫師</div>
+  <div class="rpt-footer">Smile Guardian &nbsp;·&nbsp; ${dateStr} &nbsp;·&nbsp; 本報告僅供個人參考，實際診斷請諮詢專業牙醫師</div>
 </body></html>`;
 
   const { uri } = await Print.printToFileAsync({ html, base64: false });
   await Sharing.shareAsync(uri, {
     mimeType:    'application/pdf',
-    dialogTitle: 'DentalVis 牙齒健康分析報告',
+    dialogTitle: 'Smile Guardian 牙齒健康分析報告',
     UTI:         'com.adobe.pdf',
   });
 }

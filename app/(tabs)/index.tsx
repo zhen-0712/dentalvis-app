@@ -56,7 +56,7 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>{user ? `嗨，${user.name}` : '歡迎使用'}</Text>
-            <Text style={styles.brand}>DentalVis</Text>
+            <Text style={styles.brand}>Smile Guardian</Text>
           </View>
           <Pressable style={styles.avatarBtn} onPress={() => router.push('/(tabs)/profile')}>
             <LinearGradient
@@ -178,7 +178,7 @@ export default function HomeScreen() {
           </View>
         ))}
 
-        <Text style={styles.footer}>DentalVis © 2026 · NCU Dental AI Lab</Text>
+        <Text style={styles.footer}>Smile Guardian © 2026 · NCU Dental AI Lab</Text>
       </ScrollView>
     </SafeAreaView>
   );

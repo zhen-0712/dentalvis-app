@@ -217,7 +217,7 @@ export default function ProfileScreen() {
           <Text style={styles.dangerBtnText}>登出</Text>
         </Pressable>
 
-        <Text style={styles.footer}>DentalVis © 2026 · NCU Dental AI Lab</Text>
+        <Text style={styles.footer}>Smile Guardian © 2026 · NCU Dental AI Lab</Text>
       </ScrollView>
 
       {/* ===== Capture Overlay ===== */}

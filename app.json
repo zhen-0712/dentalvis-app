@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "DentalVis",
+    "name": "Smile Guardian",
     "slug": "dentalvis-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -36,8 +36,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "DentalVis 需要存取相片以上傳牙齒照片",
-          "cameraPermission": "DentalVis 需要使用相機拍攝牙齒照片"
+          "photosPermission": "Smile Guardian 需要存取相片以上傳牙齒照片",
+          "cameraPermission": "Smile Guardian 需要使用相機拍攝牙齒照片"
         }
       ],
       "expo-font"
