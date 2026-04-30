@@ -3,7 +3,7 @@
 
 import * as SecureStore from 'expo-secure-store';
 
-const API_BASE = 'http://140.115.51.163:40111';
+export const API_BASE = 'http://140.115.51.163:40111';
 const TOKEN_KEY = 'smileguardian_token';
 
 // ===== Token 管理 =====
@@ -148,4 +148,3 @@ export async function getFileUrl(filename: string): Promise<string> {
   return `${API_BASE}/files/${filename}`;
 }
 
-export { API_BASE };

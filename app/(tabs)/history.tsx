@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
@@ -153,11 +153,78 @@ const TOOTH_COLORS = ['#239dca','#6daf5f','#e8a020','#8e44ad','#e74c3c','#16a085
 type TrendMode = 'overall' | 'detail';
 type OverallFilter = 'all' | 'upper' | 'lower';
 
-function TrendSection({ analyses }: { analyses: Analysis[] }) {
+// Compute visible polyline points up to progress [0,1]
+function visiblePts(allPts: [number, number][], progress: number): string {
+  const n = allPts.length;
+  if (n === 0) return '';
+  if (progress >= 1) return allPts.map(([x, y]) => `${x},${y}`).join(' ');
+  const maxIdx = progress * (n - 1);
+  const fi = Math.floor(maxIdx);
+  const frac = maxIdx - fi;
+  const vis = allPts.slice(0, fi + 1) as [number, number][];
+  if (fi < n - 1 && frac > 0) {
+    const [ax, ay] = allPts[fi], [bx, by] = allPts[fi + 1];
+    vis.push([ax + (bx - ax) * frac, ay + (by - ay) * frac]);
+  }
+  return vis.map(([x, y]) => `${x},${y}`).join(' ');
+}
+
+function TrendSection({ analyses, scrollAnimKey }: { analyses: Analysis[], scrollAnimKey?: number }) {
   const { width: screenW } = useWindowDimensions();
   const [trendMode, setTrendMode]       = useState<TrendMode>('overall');
   const [overallFilter, setOverallFilter] = useState<OverallFilter>('all');
   const [selectedFdis, setSelectedFdis] = useState<Set<string>>(new Set());
+  const [chartProgress, setChartProgress] = useState(1);
+  const animRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+
+  const containerRef = useRef<View>(null);
+  const initAnimDone = useRef(false);
+  const { height: screenH } = useWindowDimensions();
+
+  const triggerAnimation = useCallback(() => {
+    if (animRef.current !== null) cancelAnimationFrame(animRef.current);
+    setChartProgress(0);
+    const startTime = Date.now();
+    const DURATION = 700;
+    const tick = () => {
+      const t = Math.min((Date.now() - startTime) / DURATION, 1);
+      const p = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      setChartProgress(p);
+      if (t < 1) animRef.current = requestAnimationFrame(tick);
+      else animRef.current = null;
+    };
+    animRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  // Tab / filter changes always animate (user is already looking at the chart)
+  const isFirstMount = useRef(true);
+  useEffect(() => {
+    if (isFirstMount.current) { isFirstMount.current = false; return; }
+    triggerAnimation();
+    return () => { if (animRef.current !== null) cancelAnimationFrame(animRef.current); };
+  }, [trendMode, overallFilter]);
+
+  // Triggered by parent when scroll detects this card is visible
+  const prevScrollAnimKey = useRef(scrollAnimKey);
+  useEffect(() => {
+    if (scrollAnimKey !== prevScrollAnimKey.current) {
+      prevScrollAnimKey.current = scrollAnimKey;
+      triggerAnimation();
+    }
+  }, [scrollAnimKey, triggerAnimation]);
+
+  // Fallback: check viewport on layout (handles case where card is already visible at mount)
+  const onContainerLayout = useCallback(() => {
+    if (initAnimDone.current || !containerRef.current) return;
+    containerRef.current.measureInWindow((_x, y, _w, h) => {
+      if (y < screenH && y + h > 0) {
+        initAnimDone.current = true;
+        triggerAnimation();
+      }
+    });
+  }, [screenH, triggerAnimation]);
+
+  useEffect(() => () => { if (animRef.current !== null) cancelAnimationFrame(animRef.current); }, []);
 
   const PAD    = { top: 14, bottom: 26, left: 44, right: 10 };
   const svgW   = screenW - 40 - 32;
@@ -204,42 +271,54 @@ function TrendSection({ analyses }: { analyses: Analysis[] }) {
   const getOverallY = (a: Analysis): number => {
     const stats = a.result?.stats;
     if (!stats) return 0;
-    if (overallFilter === 'all') return stats.plaque_ratio != null ? stats.plaque_ratio * 100 : 0;
-    const summary = stats.fdi_plaque_summary || {};
-    return Object.entries(summary).reduce((s, [k, v]) => {
-      const up = FDI_UPPER.has(Number(k));
-      return s + ((overallFilter === 'upper') === up ? ((v as any).hit_verts || 0) : 0);
-    }, 0);
+    if (overallFilter === 'all')   return (stats.plaque_ratio       ?? 0) * 100;
+    if (overallFilter === 'upper') return (stats.upper_plaque_ratio ?? 0) * 100;
+    if (overallFilter === 'lower') return (stats.lower_plaque_ratio ?? 0) * 100;
+    return 0;
   };
 
   const getFdiY = (a: Analysis, fdi: string): number => {
-    const summary = a.result?.stats?.fdi_plaque_summary || {};
+    const stats = a.result?.stats;
+    const summary = stats?.fdi_plaque_summary || {};
     const v = summary[fdi] ?? summary[Number(fdi)];
-    return v ? ((v as any).hit_verts || 0) : 0;
+    if (!v) return 0;
+    const jaw = (v as any).jaw;
+    const totalVerts = jaw === 'upper'
+      ? (stats?.upper_vertices || stats?.total_vertices / 2 || 1)
+      : (stats?.lower_vertices || stats?.total_vertices / 2 || 1);
+    return ((v as any).hit_verts || 0) / totalVerts * 100;
   };
 
   const selectedFdiArray = Array.from(selectedFdis);
   const noSelection = trendMode === 'detail' && selectedFdiArray.length === 0;
 
-  const maxY = trendMode === 'overall'
-    ? Math.max(...sortedList.map(getOverallY), 0.01)
-    : Math.max(...sortedList.flatMap(a => selectedFdiArray.map(fdi => getFdiY(a, fdi))), 0.01);
-  const toY = (v: number) => chartH - (v / maxY) * chartH;
+  const maxY = 100;
+  // Piecewise Y scale: overall 0-50%→80% height; detail 0-10%→80% height
+  const makePiecewiseY = (split: number, lowFrac: number) => (v: number) => {
+    if (v <= split)
+      return chartH * (1 - (v / split) * lowFrac);
+    else
+      return chartH * (1 - lowFrac) * (1 - (v - split) / (100 - split));
+  };
+  const toY = trendMode === 'overall'
+    ? makePiecewiseY(50, 0.80)
+    : makePiecewiseY(10, 0.80);
+  const yTickVals = trendMode === 'overall'
+    ? [0, 10, 20, 30, 50, 100]
+    : [0, 2,  5,  10, 100];
+  const ySplitVal = trendMode === 'overall' ? 50 : 10;
 
-  const yTicks = [0, 1, 2, 3].map(i => ({ val: (maxY / 3) * i, y: toY((maxY / 3) * i) }));
+  const yTicks = yTickVals.map(val => ({ val, y: toY(val) }));
   const step = Math.max(1, Math.ceil(sortedList.length / 5));
   const xLabels = sortedList.map((a, i) => ({
     label: new Date(a.created_at).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }),
     x: toX(i),
     show: i % step === 0 || i === sortedList.length - 1,
   }));
-  const fmtY = (v: number) =>
-    trendMode === 'overall' && overallFilter === 'all'
-      ? `${v.toFixed(1)}%`
-      : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`;
+  const fmtY = (v: number) => `${v.toFixed(1)}%`;
 
   return (
-    <View style={styles.trendCard}>
+    <View ref={containerRef} onLayout={onContainerLayout} style={styles.trendCard}>
       <View style={styles.trendHeader}>
         <Text style={styles.blockTitle}>菌斑覆蓋率趨勢</Text>
       </View>
@@ -352,11 +431,11 @@ function TrendSection({ analyses }: { analyses: Analysis[] }) {
       )}
 
       {/* Sub-label for overall */}
-      {trendMode === 'overall' && (
-        <Text style={styles.trendSub}>
-          {overallFilter === 'all' ? '整體覆蓋率 (%)' : overallFilter === 'upper' ? '上顎菌斑頂點數' : '下顎菌斑頂點數'}
-        </Text>
-      )}
+      <Text style={styles.trendSub}>
+        {trendMode === 'overall'
+          ? (overallFilter === 'all' ? '整體覆蓋率 (%)' : overallFilter === 'upper' ? '上顎覆蓋率 (%)' : '下顎覆蓋率 (%)')
+          : '各牙位菌斑覆蓋率 (%)'}
+      </Text>
 
       {/* Chart */}
       {noSelection ? (
@@ -365,10 +444,17 @@ function TrendSection({ analyses }: { analyses: Analysis[] }) {
         </View>
       ) : (
         <Svg width={svgW} height={chartH + PAD.top + PAD.bottom} style={{ marginTop: 6 }}>
+          {/* Y 軸標題（垂直堆疊，不旋轉） */}
+          {Array.from('菌斑覆蓋率').map((ch, i) => (
+            <SvgText key={`yl${i}`} x={8} y={PAD.top + chartH / 2 - 24 + i * 12}
+              fontSize={9} fill={Colors.muted} textAnchor="middle">{ch}</SvgText>
+          ))}
           {yTicks.map((t, i) => (
             <React.Fragment key={i}>
               <Line x1={PAD.left} y1={PAD.top + t.y} x2={PAD.left + chartW} y2={PAD.top + t.y}
-                stroke="rgba(3,105,94,0.08)" strokeWidth={1} />
+                stroke={t.val === ySplitVal ? "rgba(3,105,94,0.22)" : "rgba(3,105,94,0.08)"}
+                strokeWidth={t.val === ySplitVal ? 1.5 : 1}
+                strokeDasharray={t.val === ySplitVal ? "4,4" : undefined} />
               <SvgText x={PAD.left - 6} y={PAD.top + t.y + 4} fontSize={9} fill={Colors.muted} textAnchor="end">
                 {fmtY(t.val)}
               </SvgText>
@@ -381,28 +467,40 @@ function TrendSection({ analyses }: { analyses: Analysis[] }) {
               fontSize={9} fill={Colors.muted} textAnchor="middle">{l.label}</SvgText>
           ))}
 
-          {trendMode === 'overall' ? (
-            <>
-              <Polyline
-                points={sortedList.map((a, i) => `${PAD.left + toX(i)},${PAD.top + toY(getOverallY(a))}`).join(' ')}
-                fill="none" stroke={Colors.aqua} strokeWidth={2} strokeLinejoin="round"
-              />
-              {sortedList.map((a, i) => (
-                <Circle key={i} cx={PAD.left + toX(i)} cy={PAD.top + toY(getOverallY(a))}
-                  r={4} fill={Colors.white} stroke={Colors.aqua} strokeWidth={2} />
-              ))}
-            </>
-          ) : (
+          {trendMode === 'overall' ? (() => {
+            const n = sortedList.length;
+            const allPts: [number, number][] = sortedList.map((a, i) =>
+              [PAD.left + toX(i), PAD.top + toY(getOverallY(a))]
+            );
+            const dotCutoff = chartProgress >= 1 ? n : Math.floor(chartProgress * (n - 1));
+            return (
+              <>
+                <Polyline
+                  points={visiblePts(allPts, chartProgress)}
+                  fill="none" stroke={Colors.aqua} strokeWidth={2} strokeLinejoin="round"
+                />
+                {allPts.map(([cx, cy], i) => i > dotCutoff ? null : (
+                  <Circle key={i} cx={cx} cy={cy}
+                    r={4} fill={Colors.white} stroke={Colors.aqua} strokeWidth={2} />
+                ))}
+              </>
+            );
+          })() : (
             selectedFdiArray.map((fdi, idx) => {
               const color = TOOTH_COLORS[idx % TOOTH_COLORS.length];
+              const n = sortedList.length;
+              const allPts: [number, number][] = sortedList.map((a, i) =>
+                [PAD.left + toX(i), PAD.top + toY(getFdiY(a, fdi))]
+              );
+              const dotCutoff = chartProgress >= 1 ? n : Math.floor(chartProgress * (n - 1));
               return (
                 <React.Fragment key={fdi}>
                   <Polyline
-                    points={sortedList.map((a, i) => `${PAD.left + toX(i)},${PAD.top + toY(getFdiY(a, fdi))}`).join(' ')}
+                    points={visiblePts(allPts, chartProgress)}
                     fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round"
                   />
-                  {sortedList.map((a, i) => (
-                    <Circle key={i} cx={PAD.left + toX(i)} cy={PAD.top + toY(getFdiY(a, fdi))}
+                  {allPts.map(([cx, cy], i) => i > dotCutoff ? null : (
+                    <Circle key={i} cx={cx} cy={cy}
                       r={4} fill={Colors.white} stroke={color} strokeWidth={2} />
                   ))}
                 </React.Fragment>
@@ -421,11 +519,28 @@ export default function HistoryScreen() {
   const [loading,  setLoading]  = useState(true);
   const [filter,   setFilter]   = useState<'week' | 'month' | 'all'>('all');
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const trendCardRef = useRef<View>(null);
+  const { height: screenH } = useWindowDimensions();
+  const trendAnimTriggered = useRef(false);
+
+  const checkTrendVisible = useCallback(() => {
+    if (trendAnimTriggered.current || !trendCardRef.current) return;
+    trendCardRef.current.measureInWindow((_x, y, _w, h) => {
+      if (y < screenH * 0.9 && y + h > 50) {
+        trendAnimTriggered.current = true;
+        // Notify TrendSection by toggling a trigger prop
+        setTrendAnimKey(k => k + 1);
+      }
+    });
+  }, [screenH]);
+
+  const [trendAnimKey, setTrendAnimKey] = useState(0);
 
   // Re-fetch every time the tab comes into focus so newly completed analyses appear
   useFocusEffect(useCallback(() => {
     if (!user) { setLoading(false); return; }
     setLoading(true);
+    trendAnimTriggered.current = false; // reset so animation re-triggers on new data
     fetchAnalyses().then(setAnalyses).finally(() => setLoading(false));
   }, [user]));
 
@@ -467,7 +582,12 @@ export default function HistoryScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        onScroll={checkTrendVisible}
+        scrollEventThrottle={200}
+      >
         <Text style={styles.pageTitle}>歷史記錄</Text>
         <Text style={styles.pageDesc}>點擊卡片展開查看詳細結果</Text>
 
@@ -513,7 +633,9 @@ export default function HistoryScreen() {
                 onToggle={() => toggle(a.id)}
               />
             ))}
-            <TrendSection analyses={filtered} />
+            <View ref={trendCardRef}>
+              <TrendSection analyses={filtered} scrollAnimKey={trendAnimKey} />
+            </View>
           </>
         )}
       </ScrollView>

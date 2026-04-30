@@ -659,6 +659,7 @@ export default function ScanScreen() {
                 color={mirror ? Colors.aqua : Colors.muted} />
             </Pressable>
 
+
             <View style={styles.uploadGrid}>
               {VIEWS.map((view, idx) => {
                 const file       = files[view];
