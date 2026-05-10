@@ -338,6 +338,10 @@ export default function ScanScreen() {
   const [modelUrl, setModelUrl]           = useState('');
   const [existingModelUrl, setExistingModelUrl]   = useState('');
   const [existingPlaqueUrl, setExistingPlaqueUrl] = useState('');
+  const [toothDisplayMode, setToothDisplayMode]   = useState<'normal' | 'teaching'>('normal');
+
+  const TEACHING_NEVER_DETECTED = [18, 28, 31, 38, 47, 48];
+  const TEACHING_LOW_CONFIDENCE: number[] = [];
 
   useEffect(() => {
     fetchModelStatus().then(async d => {
@@ -476,6 +480,7 @@ export default function ScanScreen() {
             // Cache-bust so model-viewer always fetches the freshly generated file
             const url = (await getFileUrl(glbFile)) + `&t=${Date.now()}`;
             setModelUrl(url);
+            setToothDisplayMode('normal');
             setResult(t.result);
             setStatus('done');
             if (isInit) {
@@ -511,11 +516,19 @@ export default function ScanScreen() {
   const open3D = (url: string, title: string) =>
     router.push({ pathname: '/viewer', params: { url, title } });
 
+  const isTeaching = toothDisplayMode === 'teaching';
+
+  const displayNeverDetected: number[] = result?.tooth_analysis
+    ? (isTeaching ? TEACHING_NEVER_DETECTED : (result.tooth_analysis.never_detected || []).map(Number))
+    : [];
+
   const suspiciousList: number[] = result?.tooth_analysis
-    ? [
-        ...(result.tooth_analysis.suspicious?.low_confidence || []),
-        ...(result.tooth_analysis.suspicious?.insufficient_views || []),
-      ].map(Number)
+    ? (isTeaching
+        ? TEACHING_LOW_CONFIDENCE
+        : [
+            ...(result.tooth_analysis.suspicious?.low_confidence || []),
+            ...(result.tooth_analysis.suspicious?.insufficient_views || []),
+          ].map(Number))
     : [];
 
   const initAcc   = result?.tooth_analysis ? calcInitAccuracy(result.tooth_analysis)            : null;
@@ -806,6 +819,23 @@ export default function ScanScreen() {
               </View>
             </View>
 
+            {/* 假牙模型 / 正常牙齒 切換 */}
+            {isInit && result.tooth_analysis && (
+              <View style={styles.toothModeToggle}>
+                {(['normal', 'teaching'] as const).map(m => (
+                  <Pressable
+                    key={m}
+                    style={[styles.toothModeBtn, toothDisplayMode === m && styles.toothModeBtnActive]}
+                    onPress={() => setToothDisplayMode(m)}
+                  >
+                    <Text style={[styles.toothModeBtnText, toothDisplayMode === m && styles.toothModeBtnTextActive]}>
+                      {m === 'normal' ? '正常牙齒' : '假牙模型'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
             {/* Key Stats */}
             <View style={[styles.statRow, !isInit && styles.statRowPlaque]}>
               {isInit && result.tooth_analysis && (() => {
@@ -818,7 +848,7 @@ export default function ScanScreen() {
                     </View>
                     <View style={styles.statDivider} />
                     <View style={styles.statItem}>
-                      <Text style={styles.statVal}>{(t.never_detected || []).length}</Text>
+                      <Text style={styles.statVal}>{displayNeverDetected.length}</Text>
                       <Text style={styles.statLabel}>未偵測到</Text>
                     </View>
                     <View style={styles.statDivider} />
@@ -872,13 +902,23 @@ export default function ScanScreen() {
             {/* 3D Viewer Button */}
             {!!modelUrl && (
               <Pressable style={styles.viewerBtn}
-                onPress={() => open3D(modelUrl, isInit ? '個人化 3D 模型' : '菌斑分布 3D 模型')}>
+                onPress={async () => {
+                  let url = modelUrl;
+                  if (isInit && isTeaching) {
+                    try {
+                      url = (await getFileUrl('custom_real_teeth_teaching.glb')) + `&t=${Date.now()}`;
+                    } catch { /* fallback to normal */ }
+                  }
+                  open3D(url, isInit ? '個人化 3D 模型' : '菌斑分布 3D 模型');
+                }}>
                 <LinearGradient
                   colors={isInit ? Gradients.hero : Gradients.plaque}
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                   style={styles.viewerBtnGrad}>
                   <Feather name="box" size={18} color={Colors.white} />
-                  <Text style={styles.viewerBtnText}>全螢幕查看 3D 模型</Text>
+                  <Text style={styles.viewerBtnText}>
+                    {isInit && isTeaching ? '查看假牙模型 3D' : '全螢幕查看 3D 模型'}
+                  </Text>
                   <Feather name="chevron-right" size={16} color="rgba(255,255,255,0.7)" />
                 </LinearGradient>
               </Pressable>
@@ -890,23 +930,23 @@ export default function ScanScreen() {
               {isInit && result.tooth_analysis && (
                 <ToothChart
                   teeth={result.tooth_analysis.teeth}
-                  neverDetected={result.tooth_analysis.never_detected || []}
+                  neverDetected={displayNeverDetected}
                   suspicious={suspiciousList}
                 />
               )}
               {!isInit && result.stats?.fdi_plaque_summary && (
                 <PlaqueChart
                   summary={result.stats.fdi_plaque_summary}
-                  neverDetected={result.tooth_analysis?.never_detected}
+                  neverDetected={displayNeverDetected}
                 />
               )}
             </View>
 
             {/* Missing teeth badges */}
-            {isInit && (result.tooth_analysis?.never_detected || []).length > 0 && (
+            {isInit && displayNeverDetected.length > 0 && (
               <View style={styles.badgeBlock}>
                 <Text style={styles.badgeBlockTitle}>未偵測到的牙齒</Text>
-                <BadgeList items={result.tooth_analysis.never_detected} color={Colors.redPlaque} />
+                <BadgeList items={displayNeverDetected} color={Colors.redPlaque} />
               </View>
             )}
 
@@ -1102,6 +1142,12 @@ const styles = StyleSheet.create({
   chartBlock:       { backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 16, marginBottom: 12 },
   chartBlockPlaque: { backgroundColor: 'rgba(35,157,202,0.06)' },
   blockLabel: { fontFamily: FontFamilies.bodyMed, fontSize: 11, color: Colors.muted, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 },
+
+  toothModeToggle:        { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.6)', borderRadius: 99, padding: 3, borderWidth: 1, borderColor: 'rgba(3,105,94,0.12)', alignSelf: 'flex-start', marginBottom: 12 },
+  toothModeBtn:           { paddingHorizontal: 14, paddingVertical: 5, borderRadius: 99 },
+  toothModeBtnActive:     { backgroundColor: Colors.jade },
+  toothModeBtnText:       { fontFamily: FontFamilies.bodyMed, fontSize: 12, color: Colors.muted },
+  toothModeBtnTextActive: { color: Colors.white },
 
   badgeBlock:      { backgroundColor: Colors.surface, borderRadius: Radius.md, padding: 14, marginBottom: 10 },
   badgeBlockTitle: { fontFamily: FontFamilies.bodyMed, fontSize: 12, color: Colors.inkSoft, marginBottom: 10 },
